@@ -9,6 +9,7 @@ from contextweave.core.project import ResolvedProject
 from contextweave.core.types import JSON
 from contextweave.daemon.client import DaemonUnavailable, IpcClient, RemoteError
 from contextweave.daemon.lifecycle import spawn_detached
+from contextweave.feedback.capture import capture_tool_feedback
 from contextweave.index.store import Store
 from contextweave.memory.capture import (
     end_session,
@@ -149,6 +150,7 @@ class InprocTransport:
                 raw_input=raw_input,
                 raw_output=raw_output,
             )
+            capture_tool_feedback(project.root, store, session_id, tool_name, raw_input)
 
     def stop(self, project: ResolvedProject, session_id: str) -> None:
         with self._store(project) as store:

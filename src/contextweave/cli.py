@@ -20,6 +20,7 @@ from contextweave.cli_commands import (
     savings,
     search,
     status,
+    tune,
 )
 from contextweave.cli_commands.common import CommandContext
 from contextweave.core.config import load_config
@@ -77,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     projects.add_parser(commands)
     forget.add_parser(commands)
     cache.add_parser(commands)
+    tune.add_parser(commands)
     return parser
 
 
@@ -185,6 +187,8 @@ def _dispatch(args: argparse.Namespace, ctx: CommandContext) -> int:
             return forget.run(args, ctx)
         case "cache":
             return cache.run(args, ctx)
+        case "tune":
+            return tune.run(args, ctx)
         case _:
             return 0
 

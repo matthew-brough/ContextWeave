@@ -473,6 +473,15 @@ class MemoryStore:
         )
         return 0 if row is None else _int(row, 0)
 
+    def current_prompt_epoch(self, session_id: str) -> int | None:
+        """Epoch seconds at which the session's latest prompt was stored, None when it has none."""
+        row = self._maybe(
+            "SELECT created_at_epoch FROM prompts WHERE project_key=? AND session_id=? "
+            "ORDER BY prompt_number DESC LIMIT 1",
+            (self.project_key, session_id),
+        )
+        return None if row is None else _int(row, 0)
+
     def recent(self, kind: Literal["decision", "code_area"], limit: int) -> list[RecallHit]:
         """Return the newest decisions or code areas of this project, newest first."""
         table = _FTS_TABLE[kind]
