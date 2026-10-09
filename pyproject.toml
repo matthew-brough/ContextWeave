@@ -8,6 +8,7 @@ dependencies = [
     "httpx>=0.28.1",
     "mcp>=2.3.0",
     "msgpack>=1.2.3",
+    "pathspec>=1.1.1",
     "sqlite-vec>=0.1.9",
     "tomli-w>=1.2.0",
     "tree-sitter==0.26.*",
