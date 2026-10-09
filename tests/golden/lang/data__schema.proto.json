@@ -1,0 +1,85 @@
+{
+  "profile": "defs",
+  "symbols": [
+    {
+      "name": "User",
+      "qualified_name": "User",
+      "kind": "message",
+      "lang": "proto",
+      "group": "data",
+      "profile": "defs",
+      "path": "data/schema.proto",
+      "start_byte": 81,
+      "end_byte": 133,
+      "start_line": 6,
+      "end_line": 9,
+      "signature": "message User {",
+      "docstring": "// A user record.",
+      "parent": null
+    },
+    {
+      "name": "Role",
+      "qualified_name": "Role",
+      "kind": "enum",
+      "lang": "proto",
+      "group": "data",
+      "profile": "defs",
+      "path": "data/schema.proto",
+      "start_byte": 135,
+      "end_byte": 161,
+      "start_line": 11,
+      "end_line": 13,
+      "signature": "enum Role {",
+      "docstring": null,
+      "parent": null
+    },
+    {
+      "name": "UserService",
+      "qualified_name": "UserService",
+      "kind": "service",
+      "lang": "proto",
+      "group": "data",
+      "profile": "defs",
+      "path": "data/schema.proto",
+      "start_byte": 163,
+      "end_byte": 223,
+      "start_line": 15,
+      "end_line": 17,
+      "signature": "service UserService {",
+      "docstring": null,
+      "parent": null
+    },
+    {
+      "name": "GetUser",
+      "qualified_name": "UserService.GetUser",
+      "kind": "rpc",
+      "lang": "proto",
+      "group": "data",
+      "profile": "defs",
+      "path": "data/schema.proto",
+      "start_byte": 187,
+      "end_byte": 221,
+      "start_line": 16,
+      "end_line": 16,
+      "signature": "rpc GetUser (User) returns (User);",
+      "docstring": null,
+      "parent": "UserService"
+    }
+  ],
+  "imports": [
+    {
+      "module": "google/protobuf/timestamp.proto",
+      "names": [],
+      "alias": null,
+      "kind": "import",
+      "lang": "proto",
+      "group": "data",
+      "profile": "defs",
+      "start_byte": 20,
+      "end_byte": 61,
+      "line": 3
+    }
+  ],
+  "exports": [],
+  "errors": []
+}

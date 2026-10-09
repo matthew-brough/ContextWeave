@@ -1,0 +1,56 @@
+{
+  "profile": "defs",
+  "symbols": [
+    {
+      "name": "users",
+      "qualified_name": "users",
+      "kind": "table",
+      "lang": "sql",
+      "group": "data",
+      "profile": "defs",
+      "path": "data/schema.sql",
+      "start_byte": 24,
+      "end_byte": 81,
+      "start_line": 2,
+      "end_line": 5,
+      "signature": "CREATE TABLE users (",
+      "docstring": "-- Users of the system.",
+      "parent": null
+    },
+    {
+      "name": "active_users",
+      "qualified_name": "active_users",
+      "kind": "view",
+      "lang": "sql",
+      "group": "data",
+      "profile": "defs",
+      "path": "data/schema.sql",
+      "start_byte": 84,
+      "end_byte": 120,
+      "start_line": 7,
+      "end_line": 7,
+      "signature": "CREATE VIEW active_users AS SELECT 1",
+      "docstring": null,
+      "parent": null
+    },
+    {
+      "name": "users_email_idx",
+      "qualified_name": "users_email_idx",
+      "kind": "index",
+      "lang": "sql",
+      "group": "data",
+      "profile": "defs",
+      "path": "data/schema.sql",
+      "start_byte": 123,
+      "end_byte": 168,
+      "start_line": 9,
+      "end_line": 9,
+      "signature": "CREATE INDEX users_email_idx ON users (email)",
+      "docstring": null,
+      "parent": null
+    }
+  ],
+  "imports": [],
+  "exports": [],
+  "errors": []
+}

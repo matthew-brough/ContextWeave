@@ -1,0 +1,72 @@
+{
+  "profile": "defs",
+  "symbols": [
+    {
+      "name": "Billing",
+      "qualified_name": "Billing",
+      "kind": "module",
+      "lang": "ruby",
+      "group": "scripting",
+      "profile": "defs",
+      "path": "scripting/sample.rb",
+      "start_byte": 20,
+      "end_byte": 188,
+      "start_line": 2,
+      "end_line": 14,
+      "signature": "module Billing",
+      "docstring": "# Top level module.",
+      "parent": null
+    },
+    {
+      "name": "Invoice",
+      "qualified_name": "Billing.Invoice",
+      "kind": "class",
+      "lang": "ruby",
+      "group": "scripting",
+      "profile": "defs",
+      "path": "scripting/sample.rb",
+      "start_byte": 53,
+      "end_byte": 184,
+      "start_line": 4,
+      "end_line": 13,
+      "signature": "class Invoice",
+      "docstring": "# An invoice.",
+      "parent": "Billing"
+    },
+    {
+      "name": "total",
+      "qualified_name": "Billing.Invoice.total",
+      "kind": "method",
+      "lang": "ruby",
+      "group": "scripting",
+      "profile": "defs",
+      "path": "scripting/sample.rb",
+      "start_byte": 96,
+      "end_byte": 136,
+      "start_line": 6,
+      "end_line": 8,
+      "signature": "def total(lines)",
+      "docstring": "# Returns the total.",
+      "parent": "Billing.Invoice"
+    },
+    {
+      "name": "build",
+      "qualified_name": "Billing.Invoice.build",
+      "kind": "method",
+      "lang": "ruby",
+      "group": "scripting",
+      "profile": "defs",
+      "path": "scripting/sample.rb",
+      "start_byte": 142,
+      "end_byte": 178,
+      "start_line": 10,
+      "end_line": 12,
+      "signature": "def self.build(id)",
+      "docstring": null,
+      "parent": "Billing.Invoice"
+    }
+  ],
+  "imports": [],
+  "exports": [],
+  "errors": []
+}

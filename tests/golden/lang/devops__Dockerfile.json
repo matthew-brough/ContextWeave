@@ -1,0 +1,77 @@
+{
+  "profile": "defs",
+  "symbols": [
+    {
+      "name": "build",
+      "qualified_name": "build",
+      "kind": "stage",
+      "lang": "dockerfile",
+      "group": "devops",
+      "profile": "defs",
+      "path": "devops/Dockerfile",
+      "start_byte": 15,
+      "end_byte": 43,
+      "start_line": 2,
+      "end_line": 2,
+      "signature": "FROM node:20-alpine AS build",
+      "docstring": "# Build stage.",
+      "parent": null
+    },
+    {
+      "name": "runtime",
+      "qualified_name": "runtime",
+      "kind": "stage",
+      "lang": "dockerfile",
+      "group": "devops",
+      "profile": "defs",
+      "path": "devops/Dockerfile",
+      "start_byte": 56,
+      "end_byte": 83,
+      "start_line": 5,
+      "end_line": 5,
+      "signature": "FROM alpine:3.19 AS runtime",
+      "docstring": null,
+      "parent": null
+    }
+  ],
+  "imports": [
+    {
+      "module": "node:20-alpine",
+      "names": [],
+      "alias": null,
+      "kind": "base_image",
+      "lang": "dockerfile",
+      "group": "devops",
+      "profile": "defs",
+      "start_byte": 15,
+      "end_byte": 43,
+      "line": 2
+    },
+    {
+      "module": "alpine:3.19",
+      "names": [],
+      "alias": null,
+      "kind": "base_image",
+      "lang": "dockerfile",
+      "group": "devops",
+      "profile": "defs",
+      "start_byte": 56,
+      "end_byte": 83,
+      "line": 5
+    },
+    {
+      "module": "--from=build",
+      "names": [],
+      "alias": null,
+      "kind": "copy_from",
+      "lang": "dockerfile",
+      "group": "devops",
+      "profile": "defs",
+      "start_byte": 84,
+      "end_byte": 111,
+      "line": 6
+    }
+  ],
+  "exports": [],
+  "errors": []
+}

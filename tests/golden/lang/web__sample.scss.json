@@ -1,0 +1,56 @@
+{
+  "profile": "defs",
+  "symbols": [
+    {
+      "name": "flex-center",
+      "qualified_name": "flex-center",
+      "kind": "function",
+      "lang": "scss",
+      "group": "web",
+      "profile": "defs",
+      "path": "web/sample.scss",
+      "start_byte": 0,
+      "end_byte": 58,
+      "start_line": 1,
+      "end_line": 4,
+      "signature": "@mixin flex-center($gap) {",
+      "docstring": null,
+      "parent": null
+    },
+    {
+      "name": "double",
+      "qualified_name": "double",
+      "kind": "function",
+      "lang": "scss",
+      "group": "web",
+      "profile": "defs",
+      "path": "web/sample.scss",
+      "start_byte": 60,
+      "end_byte": 102,
+      "start_line": 6,
+      "end_line": 8,
+      "signature": "@function double($n) {",
+      "docstring": null,
+      "parent": null
+    },
+    {
+      "name": ".card",
+      "qualified_name": ".card",
+      "kind": "rule",
+      "lang": "scss",
+      "group": "web",
+      "profile": "defs",
+      "path": "web/sample.scss",
+      "start_byte": 104,
+      "end_byte": 127,
+      "start_line": 10,
+      "end_line": 12,
+      "signature": ".card {",
+      "docstring": null,
+      "parent": null
+    }
+  ],
+  "imports": [],
+  "exports": [],
+  "errors": []
+}

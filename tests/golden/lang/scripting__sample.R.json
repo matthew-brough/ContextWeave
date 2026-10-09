@@ -1,0 +1,53 @@
+{
+  "profile": "defs",
+  "symbols": [
+    {
+      "name": "add",
+      "qualified_name": "add",
+      "kind": "function",
+      "lang": "r",
+      "group": "scripting",
+      "profile": "defs",
+      "path": "scripting/sample.R",
+      "start_byte": 55,
+      "end_byte": 88,
+      "start_line": 5,
+      "end_line": 7,
+      "signature": "add <- function(a, b) {",
+      "docstring": "#' Adds two numbers.\n#' @param a first",
+      "parent": null
+    },
+    {
+      "name": "scale_it",
+      "qualified_name": "scale_it",
+      "kind": "function",
+      "lang": "r",
+      "group": "scripting",
+      "profile": "defs",
+      "path": "scripting/sample.R",
+      "start_byte": 90,
+      "end_byte": 118,
+      "start_line": 9,
+      "end_line": 9,
+      "signature": "scale_it = function(x) x * 2",
+      "docstring": null,
+      "parent": null
+    }
+  ],
+  "imports": [
+    {
+      "module": "dplyr",
+      "names": [],
+      "alias": null,
+      "kind": "import",
+      "lang": "r",
+      "group": "scripting",
+      "profile": "defs",
+      "start_byte": 0,
+      "end_byte": 14,
+      "line": 1
+    }
+  ],
+  "exports": [],
+  "errors": []
+}

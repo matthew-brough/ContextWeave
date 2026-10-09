@@ -1,0 +1,81 @@
+{
+  "profile": "defs",
+  "symbols": [
+    {
+      "name": "Widget",
+      "qualified_name": "Widget",
+      "kind": "module",
+      "lang": "perl",
+      "group": "scripting",
+      "profile": "defs",
+      "path": "scripting/sample.pl",
+      "start_byte": 0,
+      "end_byte": 15,
+      "start_line": 1,
+      "end_line": 1,
+      "signature": "package Widget;",
+      "docstring": null,
+      "parent": null
+    },
+    {
+      "name": "build",
+      "qualified_name": "build",
+      "kind": "function",
+      "lang": "perl",
+      "group": "scripting",
+      "profile": "defs",
+      "path": "scripting/sample.pl",
+      "start_byte": 59,
+      "end_byte": 111,
+      "start_line": 6,
+      "end_line": 9,
+      "signature": "sub build",
+      "docstring": "# Builds a widget.",
+      "parent": null
+    },
+    {
+      "name": "render",
+      "qualified_name": "render",
+      "kind": "function",
+      "lang": "perl",
+      "group": "scripting",
+      "profile": "defs",
+      "path": "scripting/sample.pl",
+      "start_byte": 113,
+      "end_byte": 137,
+      "start_line": 11,
+      "end_line": 11,
+      "signature": "sub render",
+      "docstring": null,
+      "parent": null
+    }
+  ],
+  "imports": [
+    {
+      "module": "strict",
+      "names": [],
+      "alias": null,
+      "kind": "import",
+      "lang": "perl",
+      "group": "scripting",
+      "profile": "defs",
+      "start_byte": 16,
+      "end_byte": 27,
+      "line": 2
+    },
+    {
+      "module": "POSIX",
+      "names": [],
+      "alias": null,
+      "kind": "import",
+      "lang": "perl",
+      "group": "scripting",
+      "profile": "defs",
+      "start_byte": 28,
+      "end_byte": 38,
+      "line": 3
+    }
+  ],
+  "exports": [],
+  "errors": []
+}

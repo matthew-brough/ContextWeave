@@ -1,0 +1,134 @@
+{
+  "profile": "symbols",
+  "symbols": [
+    {
+      "name": "Named",
+      "qualified_name": "Named",
+      "kind": "interface",
+      "lang": "typescript",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.ts",
+      "start_byte": 63,
+      "end_byte": 105,
+      "start_line": 4,
+      "end_line": 6,
+      "signature": "export interface Named",
+      "docstring": "/** A named thing. */",
+      "parent": null
+    },
+    {
+      "name": "Id",
+      "qualified_name": "Id",
+      "kind": "type",
+      "lang": "typescript",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.ts",
+      "start_byte": 107,
+      "end_byte": 124,
+      "start_line": 8,
+      "end_line": 8,
+      "signature": "type Id = string;",
+      "docstring": null,
+      "parent": null
+    },
+    {
+      "name": "build",
+      "qualified_name": "build",
+      "kind": "function",
+      "lang": "typescript",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.ts",
+      "start_byte": 150,
+      "end_byte": 222,
+      "start_line": 11,
+      "end_line": 13,
+      "signature": "export function build(config: Config): Named",
+      "docstring": "/** Builds a widget. */",
+      "parent": null
+    },
+    {
+      "name": "Service",
+      "qualified_name": "Service",
+      "kind": "class",
+      "lang": "typescript",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.ts",
+      "start_byte": 224,
+      "end_byte": 283,
+      "start_line": 15,
+      "end_line": 18,
+      "signature": "export class Service",
+      "docstring": null,
+      "parent": null
+    },
+    {
+      "name": "run",
+      "qualified_name": "Service.run",
+      "kind": "method",
+      "lang": "typescript",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.ts",
+      "start_byte": 267,
+      "end_byte": 281,
+      "start_line": 17,
+      "end_line": 17,
+      "signature": "run(): void",
+      "docstring": "/** Runs it. */",
+      "parent": "Service"
+    }
+  ],
+  "imports": [
+    {
+      "module": "./config",
+      "names": [
+        "Config"
+      ],
+      "alias": null,
+      "kind": "import",
+      "lang": "typescript",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 0,
+      "end_byte": 39,
+      "line": 1
+    }
+  ],
+  "exports": [
+    {
+      "name": "Named",
+      "kind": "interface",
+      "lang": "typescript",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 63,
+      "end_byte": 105,
+      "line": 4
+    },
+    {
+      "name": "build",
+      "kind": "function",
+      "lang": "typescript",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 150,
+      "end_byte": 222,
+      "line": 11
+    },
+    {
+      "name": "Service",
+      "kind": "class",
+      "lang": "typescript",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 224,
+      "end_byte": 283,
+      "line": 15
+    }
+  ],
+  "errors": []
+}

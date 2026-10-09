@@ -1,0 +1,76 @@
+{
+  "profile": "symbols",
+  "symbols": [
+    {
+      "name": "Props",
+      "qualified_name": "Props",
+      "kind": "interface",
+      "lang": "tsx",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.tsx",
+      "start_byte": 50,
+      "end_byte": 93,
+      "start_line": 4,
+      "end_line": 6,
+      "signature": "export interface Props",
+      "docstring": "/** Props for App. */",
+      "parent": null
+    },
+    {
+      "name": "App",
+      "qualified_name": "App",
+      "kind": "function",
+      "lang": "tsx",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.tsx",
+      "start_byte": 116,
+      "end_byte": 178,
+      "start_line": 9,
+      "end_line": 9,
+      "signature": "export const App = (props: Props) =>",
+      "docstring": "/** The app root. */",
+      "parent": null
+    }
+  ],
+  "imports": [
+    {
+      "module": "react",
+      "names": [
+        "React"
+      ],
+      "alias": null,
+      "kind": "import",
+      "lang": "tsx",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 0,
+      "end_byte": 26,
+      "line": 1
+    }
+  ],
+  "exports": [
+    {
+      "name": "Props",
+      "kind": "interface",
+      "lang": "tsx",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 50,
+      "end_byte": 93,
+      "line": 4
+    },
+    {
+      "name": "App",
+      "kind": "function",
+      "lang": "tsx",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 116,
+      "end_byte": 178,
+      "line": 9
+    }
+  ],
+  "errors": []
+}

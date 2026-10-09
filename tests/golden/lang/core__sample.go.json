@@ -1,0 +1,113 @@
+{
+  "profile": "symbols",
+  "symbols": [
+    {
+      "name": "Widget",
+      "qualified_name": "Widget",
+      "kind": "struct",
+      "lang": "go",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.go",
+      "start_byte": 73,
+      "end_byte": 108,
+      "start_line": 9,
+      "end_line": 11,
+      "signature": "type Widget struct {",
+      "docstring": "// Widget is a widget.",
+      "parent": null
+    },
+    {
+      "name": "Renderer",
+      "qualified_name": "Renderer",
+      "kind": "interface",
+      "lang": "go",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.go",
+      "start_byte": 131,
+      "end_byte": 175,
+      "start_line": 14,
+      "end_line": 16,
+      "signature": "type Renderer interface {",
+      "docstring": "// Renderer renders.",
+      "parent": null
+    },
+    {
+      "name": "Version",
+      "qualified_name": "Version",
+      "kind": "const",
+      "lang": "go",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.go",
+      "start_byte": 204,
+      "end_byte": 225,
+      "start_line": 19,
+      "end_line": 19,
+      "signature": "const Version = \"1.0\"",
+      "docstring": "// Version is the version.",
+      "parent": null
+    },
+    {
+      "name": "Render",
+      "qualified_name": "Render",
+      "kind": "method",
+      "lang": "go",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.go",
+      "start_byte": 255,
+      "end_byte": 306,
+      "start_line": 22,
+      "end_line": 24,
+      "signature": "func (w *Widget) Render() string",
+      "docstring": "// Render returns the name.",
+      "parent": null
+    },
+    {
+      "name": "Build",
+      "qualified_name": "Build",
+      "kind": "function",
+      "lang": "go",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.go",
+      "start_byte": 333,
+      "end_byte": 446,
+      "start_line": 27,
+      "end_line": 29,
+      "signature": "func Build(name string) (*Widget, error)",
+      "docstring": "// Build makes a widget.",
+      "parent": null
+    }
+  ],
+  "imports": [
+    {
+      "module": "fmt",
+      "names": [],
+      "alias": null,
+      "kind": "import",
+      "lang": "go",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 24,
+      "end_byte": 29,
+      "line": 4
+    },
+    {
+      "module": "strings",
+      "names": [],
+      "alias": "alias",
+      "kind": "import",
+      "lang": "go",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 31,
+      "end_byte": 46,
+      "line": 5
+    }
+  ],
+  "exports": [],
+  "errors": []
+}

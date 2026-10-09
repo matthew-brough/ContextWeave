@@ -1,0 +1,130 @@
+{
+  "profile": "symbols",
+  "symbols": [
+    {
+      "name": "add",
+      "qualified_name": "add",
+      "kind": "function",
+      "lang": "javascript",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.js",
+      "start_byte": 90,
+      "end_byte": 135,
+      "start_line": 7,
+      "end_line": 9,
+      "signature": "export function add(a, b)",
+      "docstring": "/**\n * Adds two numbers.\n */",
+      "parent": null
+    },
+    {
+      "name": "scale",
+      "qualified_name": "scale",
+      "kind": "function",
+      "lang": "javascript",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.js",
+      "start_byte": 137,
+      "end_byte": 171,
+      "start_line": 11,
+      "end_line": 11,
+      "signature": "export const scale = (a) =>",
+      "docstring": null,
+      "parent": null
+    },
+    {
+      "name": "Box",
+      "qualified_name": "Box",
+      "kind": "class",
+      "lang": "javascript",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.js",
+      "start_byte": 173,
+      "end_byte": 249,
+      "start_line": 13,
+      "end_line": 18,
+      "signature": "export class Box",
+      "docstring": null,
+      "parent": null
+    },
+    {
+      "name": "volume",
+      "qualified_name": "Box.volume",
+      "kind": "method",
+      "lang": "javascript",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.js",
+      "start_byte": 219,
+      "end_byte": 247,
+      "start_line": 15,
+      "end_line": 17,
+      "signature": "volume()",
+      "docstring": "// Returns the volume.",
+      "parent": "Box"
+    }
+  ],
+  "imports": [
+    {
+      "module": "node:fs",
+      "names": [
+        "fs"
+      ],
+      "alias": null,
+      "kind": "import",
+      "lang": "javascript",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 0,
+      "end_byte": 25,
+      "line": 1
+    },
+    {
+      "module": "lodash",
+      "names": [],
+      "alias": null,
+      "kind": "require",
+      "lang": "javascript",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 41,
+      "end_byte": 58,
+      "line": 2
+    }
+  ],
+  "exports": [
+    {
+      "name": "add",
+      "kind": "function",
+      "lang": "javascript",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 90,
+      "end_byte": 135,
+      "line": 7
+    },
+    {
+      "name": "scale",
+      "kind": "function",
+      "lang": "javascript",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 137,
+      "end_byte": 171,
+      "line": 11
+    },
+    {
+      "name": "Box",
+      "kind": "class",
+      "lang": "javascript",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 173,
+      "end_byte": 249,
+      "line": 13
+    }
+  ],
+  "errors": []
+}

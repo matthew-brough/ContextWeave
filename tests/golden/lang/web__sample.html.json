@@ -1,0 +1,127 @@
+{
+  "profile": "outline",
+  "nodes": [
+    {
+      "title": "root",
+      "slug": "main-root",
+      "level": 1,
+      "kind": "landmark",
+      "lang": "html",
+      "group": "web",
+      "profile": "outline",
+      "path": "web/sample.html",
+      "start_byte": 128,
+      "end_byte": 307,
+      "start_line": 8,
+      "end_line": 15,
+      "info": "main",
+      "parent": null
+    },
+    {
+      "title": "Page Title",
+      "slug": "page-title",
+      "level": 1,
+      "kind": "heading",
+      "lang": "html",
+      "group": "web",
+      "profile": "outline",
+      "path": "web/sample.html",
+      "start_byte": 149,
+      "end_byte": 168,
+      "start_line": 9,
+      "end_line": 9,
+      "info": "h1",
+      "parent": "main-root"
+    },
+    {
+      "title": "Primary",
+      "slug": "nav-primary",
+      "level": 2,
+      "kind": "landmark",
+      "lang": "html",
+      "group": "web",
+      "profile": "outline",
+      "path": "web/sample.html",
+      "start_byte": 173,
+      "end_byte": 210,
+      "start_line": 10,
+      "end_line": 10,
+      "info": "nav",
+      "parent": "main-root"
+    },
+    {
+      "title": "alpha",
+      "slug": "section-alpha",
+      "level": 2,
+      "kind": "landmark",
+      "lang": "html",
+      "group": "web",
+      "profile": "outline",
+      "path": "web/sample.html",
+      "start_byte": 215,
+      "end_byte": 297,
+      "start_line": 11,
+      "end_line": 14,
+      "info": "section",
+      "parent": "main-root"
+    },
+    {
+      "title": "Alpha",
+      "slug": "alpha",
+      "level": 2,
+      "kind": "heading",
+      "lang": "html",
+      "group": "web",
+      "profile": "outline",
+      "path": "web/sample.html",
+      "start_byte": 242,
+      "end_byte": 256,
+      "start_line": 12,
+      "end_line": 12,
+      "info": "h2",
+      "parent": "section-alpha"
+    }
+  ],
+  "links": [
+    {
+      "module": "styles/app.css",
+      "names": [],
+      "alias": null,
+      "kind": "stylesheet",
+      "lang": "html",
+      "group": "web",
+      "profile": "outline",
+      "start_byte": 32,
+      "end_byte": 80,
+      "line": 4
+    },
+    {
+      "module": "app.js",
+      "names": [],
+      "alias": null,
+      "kind": "script",
+      "lang": "html",
+      "group": "web",
+      "profile": "outline",
+      "start_byte": 80,
+      "end_byte": 110,
+      "line": 5
+    },
+    {
+      "module": "pic.png",
+      "names": [],
+      "alias": null,
+      "kind": "image",
+      "lang": "html",
+      "group": "web",
+      "profile": "outline",
+      "start_byte": 263,
+      "end_byte": 287,
+      "line": 13
+    }
+  ],
+  "ledes": {
+    "page-title": "links"
+  },
+  "errors": []
+}

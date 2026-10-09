@@ -1,0 +1,53 @@
+{
+  "profile": "defs",
+  "symbols": [
+    {
+      "name": "greet",
+      "qualified_name": "greet",
+      "kind": "function",
+      "lang": "bash",
+      "group": "scripting",
+      "profile": "defs",
+      "path": "scripting/sample.sh",
+      "start_byte": 56,
+      "end_byte": 82,
+      "start_line": 5,
+      "end_line": 7,
+      "signature": "greet()",
+      "docstring": "# Greets the user.",
+      "parent": null
+    },
+    {
+      "name": "APP_ENV",
+      "qualified_name": "APP_ENV",
+      "kind": "var",
+      "lang": "bash",
+      "group": "scripting",
+      "profile": "defs",
+      "path": "scripting/sample.sh",
+      "start_byte": 84,
+      "end_byte": 103,
+      "start_line": 9,
+      "end_line": 9,
+      "signature": "export APP_ENV=prod",
+      "docstring": null,
+      "parent": null
+    }
+  ],
+  "imports": [
+    {
+      "module": "./lib.sh",
+      "names": [],
+      "alias": null,
+      "kind": "import",
+      "lang": "bash",
+      "group": "scripting",
+      "profile": "defs",
+      "start_byte": 20,
+      "end_byte": 35,
+      "line": 2
+    }
+  ],
+  "exports": [],
+  "errors": []
+}

@@ -1,0 +1,115 @@
+{
+  "profile": "symbols",
+  "symbols": [
+    {
+      "name": "top_level",
+      "qualified_name": "top_level",
+      "kind": "function",
+      "lang": "python",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.py",
+      "start_byte": 67,
+      "end_byte": 161,
+      "start_line": 7,
+      "end_line": 9,
+      "signature": "def top_level(a: int, b: str = \"x\") -> bool:",
+      "docstring": "\"\"\"Top-level function doc.\"\"\"",
+      "parent": null
+    },
+    {
+      "name": "Widget",
+      "qualified_name": "Widget",
+      "kind": "class",
+      "lang": "python",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.py",
+      "start_byte": 164,
+      "end_byte": 335,
+      "start_line": 12,
+      "end_line": 20,
+      "signature": "class Widget:",
+      "docstring": "\"\"\"A widget.\"\"\"",
+      "parent": null
+    },
+    {
+      "name": "render",
+      "qualified_name": "Widget.render",
+      "kind": "method",
+      "lang": "python",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.py",
+      "start_byte": 203,
+      "end_byte": 291,
+      "start_line": 15,
+      "end_line": 17,
+      "signature": "def render(self, depth: int) -> str:",
+      "docstring": "\"\"\"Render the widget.\"\"\"",
+      "parent": "Widget"
+    },
+    {
+      "name": "_hidden",
+      "qualified_name": "Widget._hidden",
+      "kind": "method",
+      "lang": "python",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.py",
+      "start_byte": 297,
+      "end_byte": 335,
+      "start_line": 19,
+      "end_line": 20,
+      "signature": "def _hidden(self):",
+      "docstring": null,
+      "parent": "Widget"
+    },
+    {
+      "name": "undocumented",
+      "qualified_name": "undocumented",
+      "kind": "function",
+      "lang": "python",
+      "group": "core",
+      "profile": "symbols",
+      "path": "core/sample.py",
+      "start_byte": 338,
+      "end_byte": 371,
+      "start_line": 23,
+      "end_line": 24,
+      "signature": "def undocumented(x):",
+      "docstring": null,
+      "parent": null
+    }
+  ],
+  "imports": [
+    {
+      "module": "os",
+      "names": [],
+      "alias": null,
+      "kind": "import",
+      "lang": "python",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 25,
+      "end_byte": 34,
+      "line": 3
+    },
+    {
+      "module": "pathlib",
+      "names": [
+        "Path"
+      ],
+      "alias": "P",
+      "kind": "from_import",
+      "lang": "python",
+      "group": "core",
+      "profile": "symbols",
+      "start_byte": 35,
+      "end_byte": 64,
+      "line": 4
+    }
+  ],
+  "exports": [],
+  "errors": []
+}
