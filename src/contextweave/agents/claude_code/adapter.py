@@ -1,5 +1,4 @@
 from collections.abc import Mapping
-from importlib.resources import files
 from pathlib import Path
 
 from contextweave.agents.base import (
@@ -10,17 +9,18 @@ from contextweave.agents.base import (
     plan_change,
     read_exact,
 )
-from contextweave.agents.blocks import find_block, remove_block, upsert_block
 from contextweave.agents.claude_code.files import (
     hooks_document,
     mcp_document,
     merge_hooks,
     merge_mcp,
     plugin_manifest,
+    routing_skill,
     unmerge_hooks,
     unmerge_mcp,
 )
 from contextweave.agents.jsonio import Layout, dump_object
+from contextweave.agents.memory_block import plan_block_install, plan_block_removal
 from contextweave.index.root import STATE_DIR
 
 MCP_FILE = ".mcp.json"
@@ -30,15 +30,10 @@ PLUGIN_SUBDIR = Path(STATE_DIR) / "plugin"
 PLUGIN_MANIFEST = Path(".claude-plugin") / "plugin.json"
 PLUGIN_MCP = Path(MCP_FILE)
 PLUGIN_HOOKS = Path("hooks") / "hooks.json"
+PLUGIN_SKILL = Path("skills") / "contextweave-routing" / "SKILL.md"
 HOOK_EVENTS = ("SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd")
 WAITING_EVENTS = frozenset({"SessionStart"})
 HOOK_TIMEOUT_S = 1
-
-
-def routing_block() -> str:
-    """The CLAUDE.md routing block shipped as package data."""
-    text = files("contextweave.agents.claude_code").joinpath("routing.md").read_text("utf-8")
-    return text.rstrip("\n")
 
 
 def _changes(candidates: list[FileChange | None]) -> list[FileChange]:
@@ -81,13 +76,11 @@ class ClaudeCodeAdapter:
 
     def _plan_project(self, root: Path) -> list[FileChange]:
         mcp_path = root / MCP_FILE
-        memory_path = root / MEMORY_FILE
         settings_path = root / SETTINGS_FILE
-        memory = read_exact(memory_path) or ""
         return _changes(
             [
                 plan_change(mcp_path, merge_mcp(read_exact(mcp_path), mcp_path)),
-                plan_change(memory_path, upsert_block(memory, routing_block())),
+                plan_block_install(root / MEMORY_FILE),
                 plan_change(
                     settings_path,
                     merge_hooks(read_exact(settings_path), settings_path, self.hook_events()),
@@ -97,17 +90,13 @@ class ClaudeCodeAdapter:
 
     def _plan_unproject(self, root: Path) -> list[FileChange]:
         mcp_path = root / MCP_FILE
-        memory_path = root / MEMORY_FILE
         settings_path = root / SETTINGS_FILE
         mcp = read_exact(mcp_path)
-        memory = read_exact(memory_path)
         settings = read_exact(settings_path)
-        has_block = memory is not None and find_block(memory) is not None
-        stripped = remove_block(memory) if memory is not None and has_block else None
         return _changes(
             [
                 plan_change(mcp_path, unmerge_mcp(mcp, mcp_path)) if mcp is not None else None,
-                plan_change(memory_path, stripped or None) if has_block else None,
+                plan_block_removal(root / MEMORY_FILE),
                 plan_change(
                     settings_path, unmerge_hooks(settings, settings_path, self.hook_events())
                 )
@@ -122,6 +111,7 @@ class ClaudeCodeAdapter:
             PLUGIN_MANIFEST: dump_object(plugin_manifest(), layout),
             PLUGIN_MCP: dump_object(mcp_document(), layout),
             PLUGIN_HOOKS: dump_object(hooks_document(self.hook_events()), layout),
+            PLUGIN_SKILL: routing_skill(),
         }
         return _changes([plan_change(target / rel, text) for rel, text in documents.items()])
 
@@ -129,5 +119,5 @@ class ClaudeCodeAdapter:
         manifest = read_exact(target / PLUGIN_MANIFEST)
         if manifest is None or '"contextweave"' not in manifest:
             return []
-        paths = (PLUGIN_MANIFEST, PLUGIN_MCP, PLUGIN_HOOKS)
+        paths = (PLUGIN_MANIFEST, PLUGIN_MCP, PLUGIN_HOOKS, PLUGIN_SKILL)
         return _changes([plan_change(target / rel, None) for rel in paths])

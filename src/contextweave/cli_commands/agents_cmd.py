@@ -68,7 +68,9 @@ def run_init_command(args: argparse.Namespace, ctx: CommandContext) -> int:
 def run_uninstall_command(args: argparse.Namespace, ctx: CommandContext) -> int:
     agent: str | None = args.agent
     dry_run: bool = args.dry_run
-    return _print(run_uninstall(discover_root(ctx.cwd), _home(ctx), dry_run, agent), dry_run)
+    return _print(
+        run_uninstall(discover_root(ctx.cwd), _home(ctx), dry_run, agent, ctx.env), dry_run
+    )
 
 
 def run_hook_command(args: argparse.Namespace, ctx: CommandContext) -> int:

@@ -27,9 +27,9 @@ def snapshot(root: Path) -> dict[str, str]:
     }
 
 
-def test_registry_holds_claude_code() -> None:
+def test_registry_holds_every_adapter() -> None:
     adapters = default_adapters()
-    assert adapters.names() == ("claude_code",)
+    assert adapters.names() == ("claude_code", "agents_md", "codex")
     assert adapters.get("claude_code").name == "claude_code"
 
 

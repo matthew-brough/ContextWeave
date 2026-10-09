@@ -19,3 +19,8 @@ def root(tmp_path: Path) -> Path:
 @pytest.fixture
 def env(tmp_path: Path) -> dict[str, str]:
     return make_env(tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def no_ambient_codex_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CODEX_HOME", raising=False)

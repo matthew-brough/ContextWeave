@@ -12,6 +12,7 @@ from contextweave.agents.jsonio import (
     object_at,
     parse_object,
 )
+from contextweave.agents.routing import routing_block
 from contextweave.core.types import JSON
 
 SERVER_NAME = "contextweave"
@@ -164,3 +165,16 @@ def plugin_manifest() -> JSONObject:
 def mcp_document() -> JSONObject:
     """A complete .mcp.json object registering the server."""
     return {"mcpServers": {SERVER_NAME: dict(SERVER_ENTRY)}}
+
+
+def routing_skill() -> str:
+    """The plugin's routing skill: frontmatter plus the routing block without its markers."""
+    body = "\n".join(routing_block().splitlines()[1:-1])
+    return (
+        "---\n"
+        f"name: {SERVER_NAME}-routing\n"
+        "description: Route code questions to ContextWeave tools: get_symbol, search_symbols, "
+        "file_outline for named things, context_search for described behaviour, recall and "
+        "remember for project memory. Use when exploring or answering questions about code.\n"
+        "---\n\n" + body + "\n"
+    )

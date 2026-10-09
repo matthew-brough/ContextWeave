@@ -1,11 +1,12 @@
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
 from contextweave.agents.base import AgentConfigError, read_exact
 from contextweave.agents.blocks import find_block
+from contextweave.agents.codex.config import codex_home, servers_in
 from contextweave.agents.jsonio import JSONObject, object_at, parse_object
 from contextweave.core.types import JSON
 
@@ -42,7 +43,9 @@ class Conflict:
     steps: tuple[str, ...]
 
 
-def detect_conflicts(root: Path, home: Path) -> list[Conflict]:
+def detect_conflicts(
+    root: Path, home: Path, env: Mapping[str, str] | None = None
+) -> list[Conflict]:
     """Read-only scan of project and user-level files for CCE and ast-mcp leftovers."""
     resolved = root.resolve()
     found: list[Conflict] = []
@@ -51,11 +54,13 @@ def detect_conflicts(root: Path, home: Path) -> list[Conflict]:
         found.extend(_hooks(resolved / name, Scope.PROJECT))
     found.extend(_memory_blocks(resolved / "CLAUDE.md", Scope.PROJECT))
     found.extend(_memory_blocks(resolved / ".claude" / "CLAUDE.md", Scope.PROJECT))
+    found.extend(_memory_blocks(resolved / "AGENTS.md", Scope.PROJECT))
     found.extend(_user_mcp(home / ".claude.json", resolved))
     found.extend(_hooks(home / ".claude" / "settings.json", Scope.USER))
     found.extend(_memory_blocks(home / ".claude" / "CLAUDE.md", Scope.USER))
     if home in resolved.parents and home != resolved:
         found.extend(_memory_blocks(home / "CLAUDE.md", Scope.USER))
+    found.extend(_codex_mcp(codex_home(home, env) / "config.toml"))
     return found
 
 
@@ -96,6 +101,16 @@ def _project_mcp(path: Path, scope: Scope) -> Iterator[Conflict]:
     servers = object_at(document, "mcpServers") if document is not None else None
     if servers is not None:
         yield from _server_conflicts(servers, path, scope, "mcpServers")
+
+
+def _codex_mcp(path: Path) -> Iterator[Conflict]:
+    try:
+        text = read_exact(path)
+        servers = servers_in(text, path) if text is not None else None
+    except AgentConfigError, OSError:
+        return
+    if servers:
+        yield from _server_conflicts(servers, path, Scope.USER, "[mcp_servers]")
 
 
 def _related(root: Path, candidate: str) -> bool:

@@ -76,10 +76,10 @@ def run_init(
         config = load_config(project, strict=True, env=environment).config
     except ConfigError as exc:
         return _failure(EXIT_USAGE, str(exc))
-    conflicts = tuple(detect_conflicts(project, user_home))
+    conflicts = tuple(detect_conflicts(project, user_home, environment))
     if conflicts and not force:
         return CommandResult(EXIT_FAILED, (format_conflicts(list(conflicts)),), (), conflicts)
-    opts = InstallOpts(user_home, plugin, plugin_dir, dry_run=True)
+    opts = InstallOpts(user_home, plugin, plugin_dir, dry_run=True, env=environment)
     try:
         planned = adapter.install(project, opts)
     except AgentConfigError as exc:
@@ -92,7 +92,9 @@ def run_init(
     except Exception as exc:
         return _failure(EXIT_FAILED, f"index failed, project not registered: {exc}")
     ProjectRegistry(user_state_dir(environment)).register(project)
-    changes = adapter.install(project, InstallOpts(user_home, plugin, plugin_dir, dry_run=False))
+    changes = adapter.install(
+        project, InstallOpts(user_home, plugin, plugin_dir, dry_run=False, env=environment)
+    )
     return CommandResult(
         EXIT_OK, describe_index(report), tuple(changes), conflicts, registered=True
     )
@@ -103,10 +105,15 @@ def run_uninstall(
     home: Path | None = None,
     dry_run: bool = False,
     agent: str | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> CommandResult:
     """Reverse init for agent config only; the index and registry entry stay."""
     project = root.resolve()
-    opts = InstallOpts(home if home is not None else Path.home(), dry_run=dry_run)
+    opts = InstallOpts(
+        home if home is not None else Path.home(),
+        dry_run=dry_run,
+        env=os.environ if env is None else env,
+    )
     adapters = default_adapters()
     try:
         selected = [adapters.get(agent)] if agent is not None else list(adapters.values())
@@ -118,7 +125,9 @@ def run_uninstall(
             changes.extend(adapter.uninstall(project, opts))
     except AgentConfigError as exc:
         return _failure(EXIT_FAILED, f"cannot update agent config: {exc}")
-    return CommandResult(EXIT_OK, (), tuple(changes))
+    seen: set[Path] = set()
+    distinct = [c for c in changes if not (c.path in seen or seen.add(c.path))]
+    return CommandResult(EXIT_OK, (), tuple(distinct))
 
 
 def run_hook(

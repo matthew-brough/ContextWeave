@@ -2,7 +2,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from contextweave.agents.blocks import find_block, remove_block, upsert_block
-from contextweave.agents.claude_code.adapter import routing_block
+from contextweave.agents.routing import routing_block
 
 BLOCK = routing_block()
 OTHER = "<!-- contextweave:begin v=2 -->\nnew\n<!-- contextweave:end -->"

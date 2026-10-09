@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -8,12 +8,13 @@ from contextweave.core.registry import Registry
 
 @dataclass(frozen=True, slots=True)
 class InstallOpts:
-    """Options for one install or uninstall; home is the user home for user-level agent config."""
+    """Options for one install or uninstall; home and env locate user-level agent config."""
 
     home: Path
     plugin: bool = False
     plugin_dir: Path | None = None
     dry_run: bool = False
+    env: Mapping[str, str] = field(default_factory=dict[str, str])
 
 
 @dataclass(frozen=True, slots=True)
