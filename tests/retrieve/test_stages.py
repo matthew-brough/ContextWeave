@@ -111,11 +111,11 @@ def test_mode_auto_combines_strategies(store: Store) -> None:
     assert keys == sorted(keys)
 
 
-def test_mode_semantic_degrades_until_vectors_exist(store: Store) -> None:
+def test_mode_semantic_degrades_without_models(store: Store) -> None:
     seed(store)
     ctx, cands = retrieve_with(store, "semantic")
     assert len(cands) == 0
-    assert ctx.envelope.degraded == [{"stage": "retrieve", "reason": "semantic_unavailable"}]
+    assert ctx.envelope.degraded == [{"stage": "retrieve", "reason": "vec_unavailable"}]
 
 
 def test_fuse_keep_caps_each_strategy(store: Store) -> None:

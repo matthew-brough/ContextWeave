@@ -3,6 +3,7 @@ from contextweave.core.refs import project_key
 from contextweave.index.records import FileStamp
 from contextweave.index.store import Store
 from contextweave.lang.parse import parse_bytes
+from contextweave.models.slots import ModelSlots
 from contextweave.retrieve.context import Mode, QueryContext
 
 
@@ -24,6 +25,7 @@ def make_ctx(
     config: Config | None = None,
     scope: str | None = None,
     mode: Mode = "auto",
+    models: ModelSlots | None = None,
 ) -> QueryContext:
     return QueryContext(
         query=query,
@@ -33,4 +35,5 @@ def make_ctx(
         root=store.root,
         scope=scope,
         mode=mode,
+        models=models,
     )

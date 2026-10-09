@@ -49,6 +49,9 @@ class Candidate:
     kind: str | None = None
     ranks: Ranks = field(default_factory=Ranks)
     scores: Scores = field(default_factory=Scores)
+    fused: float = 0.0
+    critical: bool = False
+    why: str = ""
 
     @property
     def order_key(self) -> tuple[str, int, int]:

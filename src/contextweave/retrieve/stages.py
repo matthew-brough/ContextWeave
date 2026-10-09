@@ -57,6 +57,9 @@ STAGE_SLOTS: tuple[StageSlot, ...] = (
 )
 
 
+FAST_PATH_SKIPPED = frozenset(slot.name for slot in STAGE_SLOTS[1:8])
+
+
 class StageRegistry:
     """Stages keyed by name; iteration follows STAGE_SLOTS regardless of registration order."""
 
@@ -108,6 +111,9 @@ def run_pipeline(ctx: QueryContext, registry: StageRegistry) -> PipelineRun:
     timings: list[StageTiming] = []
     for slot, stage in registry:
         if not slot.enabled(ctx.config.pipeline):
+            continue
+        plan = ctx.plan.value
+        if plan is not None and plan.fast_path and slot.name in FAST_PATH_SKIPPED:
             continue
         errors_before = len(ctx.envelope.errors)
         started = time.perf_counter()

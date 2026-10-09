@@ -5,6 +5,8 @@ from typing import Literal
 from contextweave.core.config import Config
 from contextweave.core.errors import Envelope
 from contextweave.index.store import Store
+from contextweave.models.slots import ModelSlots
+from contextweave.retrieve.pack import PackResult
 
 type Mode = Literal["auto", "lexical", "semantic", "structural"]
 type Planner = Literal["rules", "model"]
@@ -41,6 +43,13 @@ class PlanSlot:
         self.value: Plan | None = None
 
 
+class PackSlot:
+    """Mutable holder the assemble stage fills with the finished pack."""
+
+    def __init__(self) -> None:
+        self.value: PackResult | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class QueryContext:
     """Everything a stage needs to answer one query."""
@@ -52,7 +61,9 @@ class QueryContext:
     root: Path
     envelope: Envelope = field(default_factory=Envelope)
     plan: PlanSlot = field(default_factory=PlanSlot)
+    pack: PackSlot = field(default_factory=PackSlot)
     scope: str | None = None
     intent: str | None = None
     max_tokens: int = 6000
     mode: Mode = "auto"
+    models: ModelSlots | None = None

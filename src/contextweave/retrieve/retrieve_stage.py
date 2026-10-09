@@ -2,30 +2,34 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from contextweave.core.errors import DegradedEntry
-from contextweave.index.store import Store
 from contextweave.retrieve.candidates import Candidate, CandidateSet, Ranks
 from contextweave.retrieve.context import Mode, QueryContext
 from contextweave.retrieve.freshness import freshen
 from contextweave.retrieve.lexical import lexical_search
 from contextweave.retrieve.structural import structural_search
+from contextweave.retrieve.vector import vector_search
 
-type Strategy = Callable[[Store, str, str | None, int], tuple[Candidate, ...]]
+type Strategy = Callable[[QueryContext, str | None, int], tuple[Candidate, ...]]
 
 STAGE_NAME = "retrieve"
 
 
-def _lexical(store: Store, query: str, scope: str | None, limit: int) -> tuple[Candidate, ...]:
-    return lexical_search(store, query, scope=scope, limit=limit)
+def _lexical(ctx: QueryContext, scope: str | None, limit: int) -> tuple[Candidate, ...]:
+    return lexical_search(ctx.store, ctx.query, scope=scope, limit=limit)
 
 
-def _structural(store: Store, query: str, scope: str | None, limit: int) -> tuple[Candidate, ...]:
-    return structural_search(store, query, scope=scope, limit=limit)
+def _structural(ctx: QueryContext, scope: str | None, limit: int) -> tuple[Candidate, ...]:
+    return structural_search(ctx.store, ctx.query, scope=scope, limit=limit)
 
 
-STRATEGIES: dict[str, Strategy] = {"lexical": _lexical, "structural": _structural}
+STRATEGIES: dict[str, Strategy] = {
+    "lexical": _lexical,
+    "structural": _structural,
+    "semantic": vector_search,
+}
 
 MODE_STRATEGIES: dict[Mode, tuple[str, ...]] = {
-    "auto": ("lexical", "structural"),
+    "auto": ("lexical", "semantic", "structural"),
     "lexical": ("lexical",),
     "semantic": ("semantic",),
     "structural": ("structural",),
@@ -69,5 +73,5 @@ class RetrieveStage:
                 )
                 continue
             with ctx.envelope.guard(STAGE_NAME):
-                groups.append(strategy(ctx.store, ctx.query, scope, limit))
+                groups.append(strategy(ctx, scope, limit))
         return freshen(ctx.store, merge_candidates(groups), ctx.envelope, STAGE_NAME)
