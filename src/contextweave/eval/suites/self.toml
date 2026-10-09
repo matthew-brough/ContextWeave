@@ -1,0 +1,51 @@
+repo = "."
+commit = "96e578309d9f3fa32df13c8237552b7cab1deefd"
+
+[[case]]
+query = "how are symbolic references to code encoded and parsed"
+expect = ["encode_ref", "parse_ref", "Ref"]
+
+[[case]]
+query = "where is the project key derived from a root path"
+expect = ["project_key"]
+
+[[case]]
+query = "what estimates the token count of text"
+expect = ["bytes35", "measure_payload"]
+
+[[case]]
+query = "generic keyed registry that rejects duplicate registrations"
+expect = ["Registry", "Registry.register", "DuplicateKeyError"]
+must_not = ["ProjectRegistry"]
+
+[[case]]
+query = "XDG cache directory for the per-user app data"
+expect = ["user_cache_dir"]
+
+[[case]]
+query = "layered configuration loading with origin tracking"
+expect = ["load_config", "LoadedConfig", "Origin"]
+
+[[case]]
+query = "walk a project tree honouring gitignore rules and skipping binaries"
+expect = ["walk_project", "is_binary"]
+
+[[case]]
+query = "split a source file into chunks on syntax tree boundaries"
+expect = ["chunk_file", "chunk_anchor"]
+
+[[case]]
+query = "extract definitions from a parsed file with tree-sitter queries"
+expect = ["extract_symbols", "SymbolExtraction"]
+
+[[case]]
+query = "find the repository root by looking for a git marker"
+expect = ["discover_root"]
+
+[[case]]
+query = "turn a free-text topic into a full text search match expression for memory"
+expect = ["fts_match_query"]
+
+[[case]]
+query = "detect competing code-context tools configured by other agents"
+expect = ["detect_conflicts", "format_conflicts"]
