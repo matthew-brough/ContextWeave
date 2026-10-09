@@ -56,3 +56,18 @@ def projects_dir(env: Mapping[str, str]) -> Path:
 def derived_db_path(env: Mapping[str, str]) -> Path:
     """Return the path of the shared derived cache database."""
     return user_cache_dir(env) / "derived.db"
+
+
+def daemon_socket_path(env: Mapping[str, str]) -> Path:
+    """Return the unix socket the per-user daemon listens on."""
+    return user_runtime_dir(env) / "daemon.sock"
+
+
+def daemon_pid_path(env: Mapping[str, str]) -> Path:
+    """Return the daemon pidfile, which also carries its single-instance lock."""
+    return user_runtime_dir(env) / "daemon.pid"
+
+
+def daemon_log_path(env: Mapping[str, str]) -> Path:
+    """Return the log file a detached daemon writes to."""
+    return user_state_dir(env) / "daemon.log"

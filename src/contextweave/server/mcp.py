@@ -1,8 +1,9 @@
 import warnings
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
+from typing import Protocol
 from urllib.parse import unquote, urlparse
 
 import anyio
@@ -19,6 +20,7 @@ from pydantic import TypeAdapter, ValidationError
 from contextweave.core.types import JSON
 from contextweave.server import resources
 from contextweave.server.context import ToolContext
+from contextweave.server.resources import ResourceBody, ResourceInfo
 from contextweave.server.tools import TOOLS, ToolResult, ToolSpec
 
 SERVER_NAME = "contextweave"
@@ -107,8 +109,43 @@ def _error(message: str) -> types.CallToolResult:
     )
 
 
+class ToolBackend(Protocol):
+    """Where tool bodies and resources actually run: this process or the daemon."""
+
+    def run_tool(
+        self, name: str, arguments: Mapping[str, JSON], roots: tuple[Path, ...]
+    ) -> ToolResult: ...
+
+    def list_resources(self) -> list[ResourceInfo]: ...
+
+    def read_resource(self, uri: str) -> ResourceBody | None: ...
+
+
+class InprocBackend:
+    """Runs tools in this process against a base context."""
+
+    def __init__(self, base: ToolContext) -> None:
+        self._base = base
+
+    def run_tool(
+        self, name: str, arguments: Mapping[str, JSON], roots: tuple[Path, ...]
+    ) -> ToolResult:
+        return TOOLS.get(name).run(replace(self._base, roots=roots), arguments)
+
+    def list_resources(self) -> list[ResourceInfo]:
+        return resources.list_resources(self._base)
+
+    def read_resource(self, uri: str) -> ResourceBody | None:
+        return resources.read_resource(self._base, uri)
+
+
 def build_server(base: ToolContext) -> Server[None]:
     """MCP server exposing the registered tools and cw:// resources over a base context."""
+    return build_backend_server(InprocBackend(base))
+
+
+def build_backend_server(backend: ToolBackend) -> Server[None]:
+    """MCP server whose tool calls and resource reads go through the given backend."""
     if len(TOOLS) > MAX_TOOLS:
         raise RuntimeError(f"{len(TOOLS)} tools registered; the limit is {MAX_TOOLS}")
     tracker = RootsTracker()
@@ -123,13 +160,12 @@ def build_server(base: ToolContext) -> Server[None]:
     ) -> types.CallToolResult:
         if params.name not in TOOLS:
             return _error(f"unknown tool: {params.name}")
-        spec = TOOLS.get(params.name)
         try:
             arguments = _ARGUMENTS.validate_python(params.arguments or {})
         except ValidationError as exc:
             return _error(f"bad arguments: {exc.error_count()} problem(s)")
-        context = replace(base, roots=await tracker.current(ctx.session, ctx.request_id))
-        result = await anyio.to_thread.run_sync(spec.run, context, arguments)
+        roots = await tracker.current(ctx.session, ctx.request_id)
+        result = await anyio.to_thread.run_sync(backend.run_tool, params.name, arguments, roots)
         return _result(result)
 
     async def list_resources(
@@ -143,7 +179,7 @@ def build_server(base: ToolContext) -> Server[None]:
                     description=item.description,
                     mime_type=resources.JSON_MIME,
                 )
-                for item in resources.list_resources(base)
+                for item in await anyio.to_thread.run_sync(backend.list_resources)
             ]
         )
 
@@ -162,7 +198,7 @@ def build_server(base: ToolContext) -> Server[None]:
     async def read_resource(
         ctx: ToolRequest, params: types.ReadResourceRequestParams
     ) -> types.ReadResourceResult:
-        body = await anyio.to_thread.run_sync(resources.read_resource, base, params.uri)
+        body = await anyio.to_thread.run_sync(backend.read_resource, params.uri)
         if body is None:
             raise MCPError(types.INVALID_PARAMS, f"resource not found: {params.uri}")
         return types.ReadResourceResult(
@@ -190,12 +226,21 @@ def build_server(base: ToolContext) -> Server[None]:
     return server
 
 
-async def serve_stdio(base: ToolContext) -> None:
-    server = build_server(base)
+async def serve_backend(backend: ToolBackend) -> None:
+    server = build_backend_server(backend)
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
+
+
+async def serve_stdio(base: ToolContext) -> None:
+    await serve_backend(InprocBackend(base))
 
 
 def run_stdio(base: ToolContext) -> None:
     """Serve over stdio until the client disconnects."""
     anyio.run(serve_stdio, base)
+
+
+def run_backend_stdio(backend: ToolBackend) -> None:
+    """Serve a backend over stdio until the client disconnects."""
+    anyio.run(serve_backend, backend)

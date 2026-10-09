@@ -1,11 +1,14 @@
 from collections.abc import Generator, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Protocol
 
 from contextweave.agents.session_context import build_session_context
 from contextweave.core.config import LoadedConfig
 from contextweave.core.project import ResolvedProject
+from contextweave.core.types import JSON
+from contextweave.daemon.client import DaemonUnavailable, IpcClient, RemoteError
+from contextweave.daemon.lifecycle import spawn_detached
 from contextweave.index.store import Store
 from contextweave.memory.capture import (
     end_session,
@@ -151,3 +154,78 @@ class InprocTransport:
     def session_end(self, project: ResolvedProject, session_id: str, reason: str | None) -> None:
         with self._store(project) as store:
             end_session(store, session_id, "completed", reason)
+
+
+HOOK_TIMEOUT_S = 0.2
+
+
+class IpcTransport:
+    """Sends hook events to the daemon; every failure is swallowed so hooks fail open (V17)."""
+
+    def __init__(
+        self, client: IpcClient, env: Mapping[str, str], *, timeout_s: float = HOOK_TIMEOUT_S
+    ) -> None:
+        self._client = client
+        self._env = env
+        self._timeout_s = timeout_s
+
+    def _send(self, method: str, params: dict[str, JSON], *, wake: bool = False) -> JSON:
+        try:
+            return self._client.call(method, params, timeout_s=self._timeout_s)
+        except DaemonUnavailable:
+            if wake:
+                self._wake()
+        except RemoteError:
+            pass
+        return None
+
+    def _wake(self) -> None:
+        with suppress(OSError):
+            spawn_detached(self._env)
+
+    @staticmethod
+    def _base(project: ResolvedProject, session_id: str) -> dict[str, JSON]:
+        return {
+            "key": project.key,
+            "root": str(project.root),
+            "via": project.via,
+            "session_id": session_id,
+        }
+
+    def session_start(
+        self, project: ResolvedProject, session_id: str, loaded: LoadedConfig
+    ) -> str | None:
+        result = self._send("hook.session_start", self._base(project, session_id), wake=True)
+        return result if isinstance(result, str) else None
+
+    def prompt(self, project: ResolvedProject, session_id: str, text: str) -> None:
+        self._send("hook.prompt", {**self._base(project, session_id), "text": text})
+
+    def tool_event(
+        self,
+        project: ResolvedProject,
+        session_id: str,
+        tool_name: str,
+        summary: str,
+        raw_input: str,
+        raw_output: str,
+    ) -> None:
+        self._send(
+            "hook.tool_event",
+            {
+                **self._base(project, session_id),
+                "tool_name": tool_name,
+                "summary": summary,
+                "raw_input": raw_input,
+                "raw_output": raw_output,
+            },
+        )
+
+    def stop(self, project: ResolvedProject, session_id: str) -> None:
+        self._send("hook.stop", self._base(project, session_id))
+
+    def session_end(self, project: ResolvedProject, session_id: str, reason: str | None) -> None:
+        params = self._base(project, session_id)
+        if reason is not None:
+            params["reason"] = reason
+        self._send("hook.session_end", params)
