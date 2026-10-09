@@ -4,6 +4,19 @@ version = "0.1.0"
 description = "Unified code-context MCP server: structural, lexical and semantic retrieval with session memory"
 readme = "README.md"
 requires-python = ">=3.14"
+authors = [{name = "artemOP"}]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Indexing",
+    "Topic :: Utilities",
+]
 dependencies = [
     "httpx>=0.28.1",
     "mcp>=2.3.0",
