@@ -1,10 +1,15 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from contextweave.core.config import Config
+from contextweave.index.chunk_tokens import ChunkTokenizer, embed_tokenizer
+from contextweave.index.derived import DerivedCache
+from contextweave.index.embed import EmbedReport, embed_project
 from contextweave.index.records import Changed
 from contextweave.index.store import Store
 from contextweave.index.walk import walk_project
+from contextweave.models.slots import ModelSlots
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,11 +21,28 @@ class IndexReport:
     removed: tuple[str, ...]
     unchanged: int
     generation: int
+    embed: EmbedReport | None = None
 
 
-def index_project(root: Path, config: Config) -> IndexReport:
-    """Reconcile the db with the tree: parse new and changed files, drop vanished ones."""
-    with Store.open(root, chunk_config=config.chunk) as store, store.writer_lock():
+def index_project(
+    root: Path,
+    config: Config,
+    *,
+    slots: ModelSlots | None = None,
+    cache: DerivedCache | None = None,
+    env: Mapping[str, str] | None = None,
+) -> IndexReport:
+    """Reconcile the db with the tree, then embed changed chunks when model slots are given.
+
+    env enables sizing chunks with the embed model's local tokenizer.json when one is present.
+    """
+    tokenizer: ChunkTokenizer | None = (
+        embed_tokenizer(config.models.embed.model, env) if env is not None else None
+    )
+    with (
+        Store.open(root, chunk_config=config.chunk, tokenizer=tokenizer) as store,
+        store.writer_lock(),
+    ):
         known = {record.path: record for record in store.files()}
         walked = walk_project(root, config.index.ignore)
         added: list[str] = []
@@ -44,4 +66,11 @@ def index_project(root: Path, config: Config) -> IndexReport:
         removed = tuple(path for path in sorted(known) if path not in present)
         for path in removed:
             store.delete_file(path)
-        return IndexReport(tuple(added), tuple(updated), removed, unchanged, store.generation)
+        embedded = (
+            embed_project(store, slots, cache, config, tokenizer=tokenizer)
+            if slots is not None and cache is not None
+            else None
+        )
+        return IndexReport(
+            tuple(added), tuple(updated), removed, unchanged, store.generation, embedded
+        )

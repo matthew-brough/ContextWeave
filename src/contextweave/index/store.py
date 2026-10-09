@@ -14,6 +14,7 @@ from typing import Self, cast
 
 from contextweave.core.config import ChunkConfig
 from contextweave.index.chunk import chunk_file
+from contextweave.index.chunk_tokens import ChunkTokenizer
 from contextweave.index.records import (
     BodyMode,
     Changed,
@@ -32,6 +33,7 @@ from contextweave.index.records import (
     SymbolRecord,
 )
 from contextweave.index.root import ensure_self_ignore, state_dir
+from contextweave.index.vec_load import load_vec
 from contextweave.index.walk import BINARY_SNIFF_BYTES
 from contextweave.lang.extract_doc import extract_doc
 from contextweave.lang.extract_schema import extract_schema
@@ -46,7 +48,7 @@ LOCK_NAME = "index.lock"
 GENERATION_KEY = "generation"
 LOCK_POLL_S = 0.05
 
-type SqlValue = str | int | None
+type SqlValue = str | int | float | bytes | None
 type Row = tuple[object, ...]
 
 
@@ -202,9 +204,11 @@ class Store:
         readonly: bool,
         path: Path | None,
         chunk_config: ChunkConfig | None = None,
+        tokenizer: ChunkTokenizer | None = None,
     ) -> None:
         self.root = root
         self.chunk_config = chunk_config or ChunkConfig()
+        self.tokenizer = tokenizer
         self.readonly = readonly
         self.path = path
         self._connection = connection
@@ -213,29 +217,57 @@ class Store:
 
     @classmethod
     def open(
-        cls, root: Path, *, readonly: bool = False, chunk_config: ChunkConfig | None = None
+        cls,
+        root: Path,
+        *,
+        readonly: bool = False,
+        chunk_config: ChunkConfig | None = None,
+        tokenizer: ChunkTokenizer | None = None,
     ) -> Self:
         """Open or create the project db; a version mismatch raises SchemaMismatchError."""
         if readonly:
-            return cls._open_readonly(root, chunk_config)
+            return cls._open_readonly(root, chunk_config, tokenizer)
         directory = ensure_self_ignore(root)
         path = directory / DB_NAME
         connection = _connect(str(path))
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = NORMAL")
         _prepare(connection, path)
-        return cls(root, connection, readonly=False, path=path, chunk_config=chunk_config)
+        return cls(
+            root,
+            connection,
+            readonly=False,
+            path=path,
+            chunk_config=chunk_config,
+            tokenizer=tokenizer,
+        )
 
     @classmethod
-    def _open_readonly(cls, root: Path, chunk_config: ChunkConfig | None) -> Self:
+    def _open_readonly(
+        cls, root: Path, chunk_config: ChunkConfig | None, tokenizer: ChunkTokenizer | None
+    ) -> Self:
         path = state_dir(root) / DB_NAME
         if not path.is_file():
             connection = _connect(":memory:")
             _apply_schema(connection)
-            return cls(root, connection, readonly=True, path=None, chunk_config=chunk_config)
+            return cls(
+                root,
+                connection,
+                readonly=True,
+                path=None,
+                chunk_config=chunk_config,
+                tokenizer=tokenizer,
+            )
         connection = _connect(f"{path.as_uri()}?mode=ro", uri=True)
         _prepare(connection, path)
-        return cls(root, connection, readonly=True, path=path, chunk_config=chunk_config)
+        return cls(
+            root,
+            connection,
+            readonly=True,
+            path=path,
+            chunk_config=chunk_config,
+            tokenizer=tokenizer,
+        )
 
     def close(self) -> None:
         """Release the connection and any held lock."""
@@ -394,6 +426,18 @@ class Store:
     def query(self, sql: str, params: Sequence[SqlValue] = ()) -> list[Row]:
         """Run a read-only SELECT and return raw rows."""
         return self._query(sql, params)
+
+    def execute(self, sql: str, params: Sequence[SqlValue] = ()) -> None:
+        """Run one write statement; callers wrap multi-statement work in write_transaction."""
+        self._require_writable()
+        self._connection.execute(sql, params)
+
+    @contextmanager
+    def write_transaction(self) -> Generator[None]:
+        """Run the block in one immediate transaction."""
+        self._require_writable()
+        with self._transaction():
+            yield
 
     def stat_check(self, path: str) -> StatCheck:
         """Compare the file on disk with the index by mtime_ns and size (V3)."""
@@ -560,6 +604,7 @@ class Store:
             symbols,
             self._schema_nodes_in_file(file_id),
             self.chunk_config,
+            self.tokenizer,
             file_id=file_id,
         )
         by_id = {symbol.id: symbol for symbol in symbols}
@@ -687,6 +732,7 @@ _FILE_SELECT = (
 
 def _connect(target: str, *, uri: bool = False) -> sqlite3.Connection:
     connection = sqlite3.connect(target, uri=uri, isolation_level=None)
+    load_vec(connection)
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
