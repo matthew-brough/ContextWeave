@@ -15,6 +15,15 @@ from contextweave.core.types import JSON
 from contextweave.lang.parse import parse_bytes
 from contextweave.lang.registry import Group, load_language
 from contextweave.lang.ts import run_matches
+from contextweave.retrieve.pack import (
+    BudgetWire,
+    ContextPack,
+    CoverageWire,
+    DevicesWire,
+    PlanWire,
+    RrfWire,
+)
+from contextweave.retrieve.search import SearchOptions, search
 from contextweave.server.context import ToolContext
 from contextweave.server.fit import Call, Clip, Omitted, fit_items, fit_text
 from contextweave.server.nodes import Node, short_hash
@@ -22,6 +31,7 @@ from contextweave.server.payloads import (
     AstQueryArgs,
     AstQueryPayload,
     Candidate,
+    ContextSearchArgs,
     ExpandArgs,
     ExpandPayload,
     FileOutlineArgs,
@@ -41,6 +51,7 @@ from contextweave.server.payloads import (
 from contextweave.server.queries import SearchRow
 from contextweave.server.render import (
     render_ast_query,
+    render_context_search,
     render_expand,
     render_file_outline,
     render_get_symbol,
@@ -946,6 +957,54 @@ def _render_expand_ref(payload: ExpandPayload) -> str:
     return render_expand(payload)
 
 
+def _context_search(call: Call[ContextPack], args: ContextSearchArgs) -> ContextPack:
+    options = SearchOptions(
+        scope=args.get("scope"),
+        intent=args.get("intent"),
+        max_tokens=args.get("max_tokens"),
+        mode=args.get("mode", "auto"),
+        render=render_context_search,
+    )
+    result = search(call.snap.store, call.ctx.config, args["query"], options)
+    if result.omitted:
+        call.ctx.packs.put(call.project.key, result.pack["pack_id"], result.omitted)
+    return result.pack
+
+
+def _empty_pack(echo: ProjectEcho | None, env: Envelope) -> ContextPack:
+    return ContextPack(
+        pack_id="",
+        plan=PlanWire(
+            intent="",
+            scope=None,
+            rrf_weights=RrfWire(lexical=0.0, semantic=0.0, structural=0.0),
+            rels=[],
+            compaction="lossless",
+            fast_path=False,
+            planner="rules",
+            devices=DevicesWire(embed="none", classify="none"),
+        ),
+        coverage=CoverageWire(score=0.0, sufficient=False, iterations=0, missing=[]),
+        items=[],
+        omitted=[],
+        budget=BudgetWire(served_tokens=0, ceiling=0, truncated=False),
+        degraded=env.degraded,
+        errors=env.errors,
+    )
+
+
+define(
+    Tool(
+        "context_search",
+        "Context search",
+        "Describe behaviour in words; returns a budgeted pack of the most relevant code.",
+        ContextSearchArgs,
+        ContextPack,
+        _context_search,
+        _empty_pack,
+        render_context_search,
+    )
+)
 define(
     Tool(
         "get_symbol",

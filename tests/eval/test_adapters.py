@@ -32,13 +32,14 @@ def test_read_adapter(tmp_path: Path) -> None:
 
 def test_extract_helpers() -> None:
     payload: JSON = {
-        "hits": [{"qualified_name": "A"}, {"qualified_name": "A"}, {"x": {"qualified_name": "B"}}],
-        "coverage": {"verdict": "covered"},
+        "items": [{"qualified_name": "A"}, {"qualified_name": "A"}, {"x": {"qualified_name": "B"}}],
+        "omitted": [{"qualified_name": "Z"}],
+        "coverage": {"sufficient": True},
         "model_calls": 2,
     }
     assert extract_items(payload) == ("A", "B")
     assert extract_covered(payload) is True
-    assert extract_covered({"coverage": "partial"}) is False
+    assert extract_covered({"coverage": {"sufficient": False}}) is False
     assert extract_covered({}) is None
     assert extract_covered([]) is None
     assert extract_model_calls(payload) == 2

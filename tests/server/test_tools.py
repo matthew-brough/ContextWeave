@@ -28,8 +28,9 @@ def error_codes(result: ToolResult) -> list[str]:
     return [str(error["code"]) for error in items(result, "errors")]
 
 
-def test_registry_has_five_tools() -> None:
+def test_registry_has_six_tools() -> None:
     assert TOOLS.names() == (
+        "context_search",
         "get_symbol",
         "file_outline",
         "search_symbols",

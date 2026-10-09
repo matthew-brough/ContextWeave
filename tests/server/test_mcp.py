@@ -30,6 +30,7 @@ def test_list_tools(context: ToolContext) -> None:
     async def action(client: Client) -> None:
         listed = await client.list_tools()
         assert [tool.name for tool in listed.tools] == [
+            "context_search",
             "get_symbol",
             "file_outline",
             "search_symbols",

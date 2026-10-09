@@ -1,5 +1,7 @@
 from collections.abc import Iterable, Mapping, Sequence
 
+from contextweave.retrieve.pack import ContextPack
+from contextweave.retrieve.pack_text import render_pack_text
 from contextweave.server.payloads import (
     AstQueryPayload,
     Candidate,
@@ -169,3 +171,14 @@ def render_expand(payload: ExpandPayload) -> str:
         lines.append(payload["source"])
     lines.extend(_tail(payload))
     return "\n".join(lines)
+
+
+def render_context_search(pack: ContextPack) -> str:
+    lines = [render_pack_text(pack)]
+    lines.extend(
+        f"!{error['code']} {error.get('message', '')}".rstrip() for error in pack["errors"]
+    )
+    lines.extend(f"~{entry['stage']} {entry['reason']}" for entry in pack["degraded"])
+    if "hint" in pack["budget"]:
+        lines.append(f"hint: {pack['budget']['hint']}")
+    return "\n".join(line for line in lines if line)

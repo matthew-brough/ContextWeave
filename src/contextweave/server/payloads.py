@@ -7,6 +7,7 @@ from contextweave.core.project import ProjectEcho
 from contextweave.core.types import JSON
 from contextweave.index.records import FileProfile
 from contextweave.lang.registry import Group
+from contextweave.retrieve.context import Mode
 
 type SymbolView = Literal["source", "signature", "doc", "annotation"]
 type ExpandView = Literal["source", "signature", "doc"]
@@ -73,6 +74,13 @@ class SymbolItem(TypedDict):
     docstring: NotRequired[str | None]
     source: NotRequired[str]
     annotation: NotRequired[None]
+
+
+class ContextSearchArgs(BaseArgs):
+    query: Annotated[str, Field(min_length=1, description="What you are looking for, in words")]
+    scope: NotRequired[Annotated[str, Field(description="Path prefix or glob, overrides the plan")]]
+    intent: NotRequired[Annotated[str, Field(description="Overrides the planner intent")]]
+    mode: NotRequired[Mode]
 
 
 class Candidate(TypedDict):

@@ -1,14 +1,19 @@
 import hashlib
 import json
+import os
 from collections import OrderedDict
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from contextweave.core.config import Config
 from contextweave.core.errors import OmittedEntry
+from contextweave.eval.mcp_adapters import DISABLE_STAGE_ENV
 from contextweave.index.projects import ProjectRegistry
 from contextweave.index.store import Store
+from contextweave.retrieve.stages import STAGE_SLOTS
+
+STAGE_NAMES = frozenset(slot.name for slot in STAGE_SLOTS)
 
 type StoreOpener = Callable[[Path], Store]
 
@@ -55,3 +60,14 @@ class ToolContext:
     cwd: Path | None = None
     roots: tuple[Path, ...] = ()
     packs: PackCache = field(default_factory=lambda: PackCache(20))
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "config", eval_config(self.config, os.environ))
+
+
+def eval_config(config: Config, env: Mapping[str, str]) -> Config:
+    """The config with the pipeline stage named by CW_EVAL_DISABLE_STAGE switched off."""
+    stage = env.get(DISABLE_STAGE_ENV)
+    if stage not in STAGE_NAMES:
+        return config
+    return replace(config, pipeline=replace(config.pipeline, **{stage: False}))
