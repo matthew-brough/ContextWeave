@@ -10,6 +10,7 @@ from contextweave.daemon.models import ModelRuntime
 from contextweave.daemon.rebuild import RebuildReport, build_shadow, swap_shadow
 from contextweave.daemon.reconcile import ReconcilePlan, plan_reconcile
 from contextweave.daemon.scheduler import Job, JobKind, Priority, Scheduler
+from contextweave.index.edges import resolve_edges
 from contextweave.index.store import SchemaMismatchError, Store
 
 type RootLookup = Callable[[str], Path | None]
@@ -74,13 +75,20 @@ class IndexRunner:
         ):
             for path in paths:
                 store.refresh(path)
+            self._resolve_edges(key, store)
             stats.indexed_paths += len(paths)
             stats.last_indexed_at = time.time()
             if self.models is not None:
                 try:
-                    self.models.embed_changed(store)
+                    self.models.derive_changed(store)
                 except Exception as exc:
                     self.note_error(key, exc)
+
+    def _resolve_edges(self, key: str, store: Store) -> None:
+        try:
+            resolve_edges(store, self.config.index.test_globs, events=self.config.edges.events)
+        except Exception as exc:
+            self.note_error(key, exc)
 
     def reconcile_plan(self, root: Path) -> ReconcilePlan:
         return plan_reconcile(root, self.config.index.ignore)
@@ -127,7 +135,7 @@ class IndexRunner:
                 root,
                 self.config,
                 tokenizer=models.tokenizer if models is not None else None,
-                finish=models.embed_changed if models is not None else None,
+                finish=models.derive_changed if models is not None else None,
             )
 
         report = models.bulk(build) if models is not None and bulk else build()

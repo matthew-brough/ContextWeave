@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from contextweave.core.config import Config
 from contextweave.core.paths import derived_db_path
+from contextweave.index.annotate import annotate_project
 from contextweave.index.chunk_tokens import ChunkTokenizer, embed_tokenizer
 from contextweave.index.derived import DerivedCache
 from contextweave.index.embed import embed_project
@@ -32,6 +33,15 @@ class ModelRuntime:
     def embed_changed(self, store: Store) -> None:
         """Embed chunks lacking a current vector."""
         embed_project(store, self.slots, self.cache, self.config, tokenizer=self.tokenizer)
+
+    def annotate_changed(self, store: Store) -> None:
+        """Annotate chunks lacking a current annotation, reusing cached ones."""
+        annotate_project(store, self.slots, self.cache, self.config)
+
+    def derive_changed(self, store: Store) -> None:
+        """Annotate, then embed, so the annot vector space sees the new annotations."""
+        self.annotate_changed(store)
+        self.embed_changed(store)
 
     def apply(self, profile: Profile) -> None:
         self.slots.apply_profile(profile)

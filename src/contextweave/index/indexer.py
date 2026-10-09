@@ -1,8 +1,9 @@
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from contextweave.core.config import Config
+from contextweave.index.annotate import AnnotateProgress, AnnotateReport, annotate_project
 from contextweave.index.chunk_tokens import ChunkTokenizer, embed_tokenizer
 from contextweave.index.derived import DerivedCache
 from contextweave.index.edges import resolve_edges
@@ -23,6 +24,7 @@ class IndexReport:
     unchanged: int
     generation: int
     embed: EmbedReport | None = None
+    annotate: AnnotateReport | None = None
 
 
 def index_project(
@@ -32,8 +34,9 @@ def index_project(
     slots: ModelSlots | None = None,
     cache: DerivedCache | None = None,
     env: Mapping[str, str] | None = None,
+    on_annotate_progress: Callable[[AnnotateProgress], None] | None = None,
 ) -> IndexReport:
-    """Reconcile the db with the tree, then embed changed chunks when model slots are given.
+    """Reconcile the db with the tree, then annotate and embed changed chunks given model slots.
 
     env enables sizing chunks with the embed model's local tokenizer.json when one is present.
     """
@@ -67,12 +70,17 @@ def index_project(
         removed = tuple(path for path in sorted(known) if path not in present)
         for path in removed:
             store.delete_file(path)
-        resolve_edges(store, config.index.test_globs)
+        resolve_edges(store, config.index.test_globs, events=config.edges.events)
+        annotated = (
+            annotate_project(store, slots, cache, config, on_progress=on_annotate_progress)
+            if slots is not None and cache is not None
+            else None
+        )
         embedded = (
             embed_project(store, slots, cache, config, tokenizer=tokenizer)
             if slots is not None and cache is not None
             else None
         )
         return IndexReport(
-            tuple(added), tuple(updated), removed, unchanged, store.generation, embedded
+            tuple(added), tuple(updated), removed, unchanged, store.generation, embedded, annotated
         )

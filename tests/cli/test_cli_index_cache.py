@@ -35,6 +35,14 @@ def test_index_stage_embed(
     assert "embedded" in result.out
 
 
+def test_index_stage_annotate(
+    initialised: Path, env: dict[str, str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    result = cw(capsys, env, initialised, "index", "--stage", "annotate")
+    assert result.code == 0, result.err
+    assert "annotated" in result.out
+
+
 def test_index_rebuild_swaps_shadow(
     initialised: Path, env: dict[str, str], capsys: pytest.CaptureFixture[str]
 ) -> None:

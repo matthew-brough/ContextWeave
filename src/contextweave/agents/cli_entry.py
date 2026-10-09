@@ -12,6 +12,7 @@ from contextweave.core.config import Config, ConfigError, load_config
 from contextweave.core.paths import user_state_dir
 from contextweave.core.registry import UnknownKeyError
 from contextweave.daemon.lifecycle import client_for
+from contextweave.index.annotate import annotate_lines
 from contextweave.index.indexer import IndexReport, index_project
 from contextweave.index.projects import ProjectRegistry
 from contextweave.index.root import ensure_self_ignore
@@ -44,6 +45,8 @@ def describe_index(report: IndexReport) -> tuple[str, ...]:
         f"indexed: {len(report.added)} added, {len(report.updated)} updated, "
         f"{len(report.removed)} removed, {report.unchanged} unchanged"
     ]
+    if report.annotate is not None:
+        lines.extend(annotate_lines(report.annotate))
     embed = report.embed
     if embed is not None:
         lines.append(f"embedded {embed.embedded} chunks, {embed.pending} pending")

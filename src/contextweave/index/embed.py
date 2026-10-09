@@ -80,7 +80,8 @@ def annot_inputs(store: Store, config: Config) -> tuple[VectorInput, ...]:
     """Annotation purpose, tags and signatures of annotated chunks keyed by a hash of that text."""
     annotate = config.models.annotate
     rows = store.query(
-        "SELECT a.chunk_id, a.purpose, a.tags,"
+        "SELECT a.chunk_id, a.purpose,"
+        " (SELECT group_concat(t.value, ' ') FROM json_each(a.tags) t),"
         " (SELECT group_concat(s.signature, char(10)) FROM chunk_symbols cs"
         "  JOIN symbols s ON s.id = cs.symbol_id WHERE cs.chunk_id = a.chunk_id)"
         " FROM annotations a WHERE a.model_id = ? AND a.prompt_version = ? ORDER BY a.chunk_id",
@@ -88,7 +89,7 @@ def annot_inputs(store: Store, config: Config) -> tuple[VectorInput, ...]:
     )
     inputs: list[VectorInput] = []
     for row in rows:
-        text = f"{row[1]}\n{row[2]}\n{row[3] or ''}"
+        text = f"{row[1]}\n{row[2] or ''}\n{row[3] or ''}"
         inputs.append(
             VectorInput(int(str(row[0])), hashlib.sha256(text.encode()).hexdigest(), text)
         )

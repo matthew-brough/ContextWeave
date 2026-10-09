@@ -12,17 +12,18 @@ from contextweave.cli_commands.common import (
     open_models,
     say,
 )
-from contextweave.cli_commands.indexing import full_index
+from contextweave.cli_commands.indexing import full_index, progress_printer
 from contextweave.core.config import Config, load_config
 from contextweave.daemon.client import DaemonUnavailable, RemoteError
 from contextweave.daemon.lifecycle import client_for, is_running
 from contextweave.daemon.models import ModelRuntime
 from contextweave.daemon.rebuild import build_shadow, swap_shadow
+from contextweave.index.annotate import AnnotateReport, annotate_lines, annotate_project
 from contextweave.index.embed import EmbedReport, embed_project
 from contextweave.index.indexer import IndexReport, index_project
 from contextweave.index.store import Store
 
-STAGES = ("structure", "embed")
+STAGES = ("structure", "annotate", "embed")
 REBUILD_WAIT_S = 3600.0
 
 
@@ -44,6 +45,8 @@ def _report_lines(report: IndexReport) -> list[str]:
         f"{len(report.removed)} removed, {report.unchanged} unchanged, "
         f"generation {report.generation}"
     ]
+    if report.annotate is not None:
+        lines.extend(annotate_lines(report.annotate))
     if report.embed is not None:
         lines.extend(_embed_lines(report.embed))
     return lines
@@ -52,6 +55,13 @@ def _report_lines(report: IndexReport) -> list[str]:
 def _embed_only(root: Path, config: Config, models: ModelRuntime) -> EmbedReport:
     with Store.open(root, chunk_config=config.chunk, tokenizer=models.tokenizer) as store:
         return embed_project(store, models.slots, models.cache, config, tokenizer=models.tokenizer)
+
+
+def _annotate_only(root: Path, config: Config, models: ModelRuntime) -> AnnotateReport:
+    with Store.open(root, chunk_config=config.chunk, tokenizer=models.tokenizer) as store:
+        return annotate_project(
+            store, models.slots, models.cache, config, on_progress=progress_printer()
+        )
 
 
 def _rebuild_via_daemon(env: Mapping[str, str], key: str) -> bool:
@@ -70,7 +80,7 @@ def _rebuild_local(root: Path, config: Config, env: Mapping[str, str], stage: st
 
         def finish(store: Store) -> None:
             if models is not None:
-                models.embed_changed(store)
+                models.derive_changed(store)
 
         build_shadow(
             root,
@@ -100,6 +110,18 @@ def run(args: argparse.Namespace, ctx: CommandContext) -> int:
         return EXIT_OK
     if stage == "structure":
         for line in _report_lines(index_project(project.root, config, env=ctx.env)):
+            say(line)
+        return EXIT_OK
+    if stage == "annotate":
+        models = open_models(config, ctx.env)
+        if models is None:
+            complain("index", "annotate stage needs usable models")
+            return EXIT_FAILED
+        try:
+            annotate_report = _annotate_only(project.root, config, models)
+        finally:
+            models.close()
+        for line in annotate_lines(annotate_report):
             say(line)
         return EXIT_OK
     if stage == "embed":
