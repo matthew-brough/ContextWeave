@@ -1,0 +1,161 @@
+card_prefixes = { query = "Find the most relevant code snippet given the following query:\n", doc = "Candidate code snippet:\n" }
+
+[[pairs]]
+query = "parse a toml config file into dataclasses"
+code = """def load_config(path):
+    raw = tomllib.loads(path.read_text())
+    return Config(**raw)"""
+
+[[pairs]]
+query = "retry an http request with exponential backoff"
+code = """def fetch(url):
+    for attempt in range(5):
+        try:
+            return client.get(url)
+        except TimeoutError:
+            time.sleep(2 ** attempt)"""
+
+[[pairs]]
+query = "compute the sha256 of a file in chunks"
+code = """def file_digest(path):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as handle:
+        while block := handle.read(65536):
+            digest.update(block)
+    return digest.hexdigest()"""
+
+[[pairs]]
+query = "remove duplicate items while keeping order"
+code = """def unique(items):
+    seen = set()
+    return [item for item in items if not (item in seen or seen.add(item))]"""
+
+[[pairs]]
+query = "register a net event handler for player spawn"
+code = """RegisterNetEvent('player:spawned')
+AddEventHandler('player:spawned', function(coords)
+    SetEntityCoords(PlayerPedId(), coords.x, coords.y, coords.z)
+end)"""
+
+[[pairs]]
+query = "send a json response with a status code"
+code = """function respond(res, status, body) {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(body));
+}"""
+
+[[chunks]]
+path = "src/store.py"
+kind = "function"
+name = "upsert_file"
+code = """def upsert_file(conn, path, content_hash, mtime_ns, size):
+    conn.execute(
+        "INSERT INTO files(path, hash, mtime_ns, size) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(path) DO UPDATE SET hash = excluded.hash, mtime_ns = excluded.mtime_ns",
+        (path, content_hash, mtime_ns, size),
+    )"""
+
+[[chunks]]
+path = "src/walk.py"
+kind = "function"
+name = "iter_sources"
+code = """def iter_sources(root, ignore):
+    for current, dirs, files in os.walk(root):
+        dirs[:] = [name for name in dirs if name not in ignore]
+        for name in files:
+            if not is_binary(Path(current, name)):
+                yield Path(current, name)"""
+
+[[chunks]]
+path = "client/spawn.lua"
+kind = "function"
+name = "onSpawn"
+code = """function onSpawn(coords)
+    local ped = PlayerPedId()
+    SetEntityCoords(ped, coords.x, coords.y, coords.z)
+    TriggerServerEvent('player:ready', GetPlayerServerId(PlayerId()))
+end"""
+
+[[chunks]]
+path = "src/budget.py"
+kind = "class"
+name = "Ceiling"
+code = """class Ceiling:
+    limit: int
+
+    def fits(self, used):
+        return used <= self.limit
+
+    def over_by(self, used):
+        return max(0, used - self.limit)"""
+
+[[chunks]]
+path = "web/respond.js"
+kind = "function"
+name = "respond"
+code = """function respond(res, status, body) {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(body));
+}"""
+
+[[chunks]]
+path = "src/hashing.py"
+kind = "function"
+name = "file_digest"
+code = """def file_digest(path):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as handle:
+        while block := handle.read(65536):
+            digest.update(block)
+    return digest.hexdigest()"""
+
+[state]
+query = "where is the retry logic for failed model calls"
+card = """path: src/contextweave/models/slots.py
+name: ModelSlots.call
+kind: method
+rels: calls record_failure, called_by embed, annotate
+annotation: runs one model call on the active device and converts failures into skipped results
+code: def call(self, slot, fn, stage=None):
+    health = self.healths[slot]
+    device = health.acquire()
+    if device is None:
+        health.record_unavailable()
+        return Skipped(DegradedEntry(stage=stage, reason=health.unavailable_reason()))
+"""
+
+[[gate_questions]]
+name = "answers_query"
+text = "Does the candidate answer the query?"
+kind = "binary"
+options = ["yes", "no"]
+
+[[gate_questions]]
+name = "relevance"
+text = "How relevant is the candidate to the query?"
+kind = "score"
+options = ["0", "0.25", "0.5", "0.75", "1"]
+
+[[gate_questions]]
+name = "role"
+text = "What role does the candidate play for the query?"
+kind = "choice"
+options = ["implementation", "interface", "caller", "test", "config", "boilerplate", "unrelated"]
+
+[[gate_questions]]
+name = "structural_value"
+text = "How much structural context does the candidate add?"
+kind = "score"
+options = ["0", "0.25", "0.5", "0.75", "1"]
+
+[score_question]
+name = "relevance"
+text = "How relevant is the candidate to the query?"
+kind = "score"
+options = ["0", "0.25", "0.5", "0.75", "1"]
+
+[dynamic_question]
+name = "scope"
+text = "Which directory does the query concern?"
+kind = "choice"
+options = ["probe_alpha_dir", "probe_beta_dir", "probe_gamma_dir"]

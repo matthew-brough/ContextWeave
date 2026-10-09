@@ -15,6 +15,7 @@ from contextweave.cli_commands import (
     forget,
     index_cmd,
     languages,
+    models_cmd,
     projects,
     recall,
     savings,
@@ -79,6 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     forget.add_parser(commands)
     cache.add_parser(commands)
     tune.add_parser(commands)
+    models_cmd.add_parser(commands)
     return parser
 
 
@@ -189,6 +191,8 @@ def _dispatch(args: argparse.Namespace, ctx: CommandContext) -> int:
             return cache.run(args, ctx)
         case "tune":
             return tune.run(args, ctx)
+        case "models":
+            return models_cmd.run(args, ctx)
         case _:
             return 0
 
