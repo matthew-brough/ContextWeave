@@ -465,6 +465,26 @@ class MemoryStore:
             )
         return _row_id(cur.lastrowid)
 
+    def current_prompt_number(self, session_id: str) -> int:
+        """Return the session's latest prompt number, 0 when it has none or is unknown."""
+        row = self._maybe(
+            "SELECT prompt_count FROM sessions WHERE project_key=? AND id=?",
+            (self.project_key, session_id),
+        )
+        return 0 if row is None else _int(row, 0)
+
+    def recent(self, kind: Literal["decision", "code_area"], limit: int) -> list[RecallHit]:
+        """Return the newest decisions or code areas of this project, newest first."""
+        table = _FTS_TABLE[kind]
+        rows = self._rows(
+            f"SELECT id FROM {table} WHERE project_key=? ORDER BY created_at_epoch DESC, id DESC "
+            "LIMIT ?",
+            (self.project_key, limit),
+        )
+        ids = [_int(row, 0) for row in rows]
+        loaded = self.hits(kind, ids)
+        return [loaded[row_id] for row_id in ids if row_id in loaded]
+
     def prompt_text(self, session_id: str, prompt_number: int) -> str | None:
         """Return a stored prompt's text."""
         row = self._maybe(

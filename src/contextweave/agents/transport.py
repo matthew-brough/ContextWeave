@@ -1,0 +1,153 @@
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Protocol
+
+from contextweave.agents.session_context import build_session_context
+from contextweave.core.config import LoadedConfig
+from contextweave.core.project import ResolvedProject
+from contextweave.index.store import Store
+from contextweave.memory.capture import (
+    end_session,
+    enqueue_turn_summary,
+    record_prompt,
+    record_tool_event,
+    start_session,
+)
+from contextweave.memory.store import MemoryStore, memory_db_path
+
+HEALTH_UNBUILT = "index: not built yet (run cw init)"
+HEALTH_UNREADABLE = "index: unreadable (run cw index --rebuild)"
+
+
+class HookTransport(Protocol):
+    """Where hook events go; the daemon IPC client will implement this."""
+
+    def session_start(
+        self, project: ResolvedProject, session_id: str, loaded: LoadedConfig
+    ) -> str | None: ...
+
+    def prompt(self, project: ResolvedProject, session_id: str, text: str) -> None: ...
+
+    def tool_event(
+        self,
+        project: ResolvedProject,
+        session_id: str,
+        tool_name: str,
+        summary: str,
+        raw_input: str,
+        raw_output: str,
+    ) -> None: ...
+
+    def stop(self, project: ResolvedProject, session_id: str) -> None: ...
+
+    def session_end(
+        self, project: ResolvedProject, session_id: str, reason: str | None
+    ) -> None: ...
+
+
+class NullTransport:
+    """Transport that drops everything; used when no backend is reachable."""
+
+    def session_start(
+        self, project: ResolvedProject, session_id: str, loaded: LoadedConfig
+    ) -> str | None:
+        return None
+
+    def prompt(self, project: ResolvedProject, session_id: str, text: str) -> None:
+        return None
+
+    def tool_event(
+        self,
+        project: ResolvedProject,
+        session_id: str,
+        tool_name: str,
+        summary: str,
+        raw_input: str,
+        raw_output: str,
+    ) -> None:
+        return None
+
+    def stop(self, project: ResolvedProject, session_id: str) -> None:
+        return None
+
+    def session_end(self, project: ResolvedProject, session_id: str, reason: str | None) -> None:
+        return None
+
+
+def index_health(root: Path) -> str:
+    """One-line index status read without writing."""
+    if not (root / ".contextweave" / "index.db").is_file():
+        return HEALTH_UNBUILT
+    try:
+        with Store.open(root, readonly=True) as store:
+            return f"index: {len(store.files())} files, generation {store.generation}"
+    except Exception:
+        return HEALTH_UNREADABLE
+
+
+class InprocTransport:
+    """Writes straight to the project's memory.db in the hook process."""
+
+    def __init__(self, env: Mapping[str, str]) -> None:
+        self._env = env
+
+    @contextmanager
+    def _store(self, project: ResolvedProject) -> Generator[MemoryStore]:
+        store = MemoryStore.open(memory_db_path(project.key, self._env), project.key)
+        try:
+            yield store
+        finally:
+            store.close()
+
+    def session_start(
+        self, project: ResolvedProject, session_id: str, loaded: LoadedConfig
+    ) -> str | None:
+        with self._store(project) as store:
+            start_session(store, session_id)
+            warnings = [
+                f"warning: config_invalid key {issue.key} in {issue.file}"
+                for issue in loaded.issues
+            ]
+            return build_session_context(
+                title=f"ContextWeave project {project.root.name} ({project.key})",
+                health=index_health(project.root),
+                warnings=warnings,
+                decisions=store.recent("decision", 5),
+                code_areas=store.recent("code_area", 5),
+                limit_tokens=loaded.config.hooks.session_start_tokens,
+            )
+
+    def prompt(self, project: ResolvedProject, session_id: str, text: str) -> None:
+        with self._store(project) as store:
+            record_prompt(store, session_id, text)
+
+    def tool_event(
+        self,
+        project: ResolvedProject,
+        session_id: str,
+        tool_name: str,
+        summary: str,
+        raw_input: str,
+        raw_output: str,
+    ) -> None:
+        with self._store(project) as store:
+            record_tool_event(
+                store,
+                session_id,
+                store.current_prompt_number(session_id),
+                tool_name,
+                summary=summary,
+                raw_input=raw_input,
+                raw_output=raw_output,
+            )
+
+    def stop(self, project: ResolvedProject, session_id: str) -> None:
+        with self._store(project) as store:
+            number = store.current_prompt_number(session_id)
+            if number > 0:
+                enqueue_turn_summary(store, session_id, number)
+
+    def session_end(self, project: ResolvedProject, session_id: str, reason: str | None) -> None:
+        with self._store(project) as store:
+            end_session(store, session_id, "completed", reason)
