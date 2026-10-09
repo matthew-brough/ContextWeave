@@ -105,7 +105,8 @@ CREATE TABLE chunks (
   context_header TEXT NOT NULL DEFAULT '',
   body_mode      TEXT NOT NULL,
   oversize       INTEGER NOT NULL DEFAULT 0,
-  content_hash   TEXT NOT NULL
+  content_hash   TEXT NOT NULL,
+  part           INTEGER
 );
 
 CREATE TABLE chunk_symbols (

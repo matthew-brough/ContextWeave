@@ -1,0 +1,20 @@
+[
+  {
+    "start_byte": 0,
+    "end_byte": 542,
+    "kind": "handler",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": "closeMenu"
+  },
+  {
+    "start_byte": 544,
+    "end_byte": 714,
+    "kind": "glue",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": "b544-714"
+  }
+]

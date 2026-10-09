@@ -1,0 +1,20 @@
+[
+  {
+    "start_byte": 0,
+    "end_byte": 161,
+    "kind": "function",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": "top_level"
+  },
+  {
+    "start_byte": 164,
+    "end_byte": 371,
+    "kind": "group",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": "Widget"
+  }
+]

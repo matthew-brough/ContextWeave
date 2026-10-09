@@ -1,0 +1,29 @@
+[
+  {
+    "start_byte": 0,
+    "end_byte": 437,
+    "kind": "group",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": "PlayerInfo"
+  },
+  {
+    "start_byte": 438,
+    "end_byte": 763,
+    "kind": "class",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": "ServerMain"
+  },
+  {
+    "start_byte": 765,
+    "end_byte": 973,
+    "kind": "class",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": "StringExtensions"
+  }
+]

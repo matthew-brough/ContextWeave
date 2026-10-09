@@ -1,0 +1,11 @@
+[
+  {
+    "start_byte": 0,
+    "end_byte": 171,
+    "kind": "rule",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": ".btn, #main .btn:hover"
+  }
+]

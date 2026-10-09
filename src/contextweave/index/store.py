@@ -12,8 +12,12 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self, cast
 
+from contextweave.core.config import ChunkConfig
+from contextweave.index.chunk import chunk_file
 from contextweave.index.records import (
+    BodyMode,
     Changed,
+    Chunk,
     DocNodeRecord,
     FileData,
     FileProfile,
@@ -36,7 +40,7 @@ from contextweave.lang.model import Import, LangError
 from contextweave.lang.parse import ParseResult, parse_bytes
 from contextweave.lang.registry import GROUPS, PROFILES, Group, spec_for_path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DB_NAME = "index.db"
 LOCK_NAME = "index.lock"
 GENERATION_KEY = "generation"
@@ -197,8 +201,10 @@ class Store:
         *,
         readonly: bool,
         path: Path | None,
+        chunk_config: ChunkConfig | None = None,
     ) -> None:
         self.root = root
+        self.chunk_config = chunk_config or ChunkConfig()
         self.readonly = readonly
         self.path = path
         self._connection = connection
@@ -206,28 +212,30 @@ class Store:
         self._lock_descriptor: int | None = None
 
     @classmethod
-    def open(cls, root: Path, *, readonly: bool = False) -> Self:
+    def open(
+        cls, root: Path, *, readonly: bool = False, chunk_config: ChunkConfig | None = None
+    ) -> Self:
         """Open or create the project db; a version mismatch raises SchemaMismatchError."""
         if readonly:
-            return cls._open_readonly(root)
+            return cls._open_readonly(root, chunk_config)
         directory = ensure_self_ignore(root)
         path = directory / DB_NAME
         connection = _connect(str(path))
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = NORMAL")
         _prepare(connection, path)
-        return cls(root, connection, readonly=False, path=path)
+        return cls(root, connection, readonly=False, path=path, chunk_config=chunk_config)
 
     @classmethod
-    def _open_readonly(cls, root: Path) -> Self:
+    def _open_readonly(cls, root: Path, chunk_config: ChunkConfig | None) -> Self:
         path = state_dir(root) / DB_NAME
         if not path.is_file():
             connection = _connect(":memory:")
             _apply_schema(connection)
-            return cls(root, connection, readonly=True, path=None)
+            return cls(root, connection, readonly=True, path=None, chunk_config=chunk_config)
         connection = _connect(f"{path.as_uri()}?mode=ro", uri=True)
         _prepare(connection, path)
-        return cls(root, connection, readonly=True, path=path)
+        return cls(root, connection, readonly=True, path=path, chunk_config=chunk_config)
 
     def close(self) -> None:
         """Release the connection and any held lock."""
@@ -307,6 +315,7 @@ class Store:
                 )
                 file_id = _int(cursor.lastrowid)
             self._insert_children(file_id, data)
+            self._write_chunks(file_id, path, parse_result, source)
             self._bump_generation()
         stored = self.get_data(path)
         if stored is None:
@@ -358,6 +367,18 @@ class Store:
             self._doc_nodes_in_file(file.id),
         )
 
+    def chunks_in_file(self, path: str) -> tuple[Chunk, ...]:
+        """Chunks of one file in source order, with served text and symbol membership."""
+        rows = self._query(
+            "SELECT c.id, c.file_id, c.kind, c.start_byte, c.end_byte, c.context_header,"
+            " c.body_mode, c.oversize, c.content_hash, c.part,"
+            " (SELECT body FROM fts_code WHERE rowid = c.id)"
+            " FROM chunks c JOIN files f ON f.id = c.file_id WHERE f.path = ?"
+            " ORDER BY c.start_byte, c.end_byte, c.part, c.id",
+            (path,),
+        )
+        return tuple(self._chunk_record(row) for row in rows)
+
     def symbols_by_name(self, name: str) -> tuple[SymbolRecord, ...]:
         """Symbols with an exact simple name."""
         return self._symbols("WHERE s.name = ?", (name,))
@@ -369,6 +390,10 @@ class Store:
     def symbols_in_file(self, path: str) -> tuple[SymbolRecord, ...]:
         """Symbols of one file in source order."""
         return self._symbols("WHERE f.path = ?", (path,))
+
+    def query(self, sql: str, params: Sequence[SqlValue] = ()) -> list[Row]:
+        """Run a read-only SELECT and return raw rows."""
+        return self._query(sql, params)
 
     def stat_check(self, path: str) -> StatCheck:
         """Compare the file on disk with the index by mtime_ns and size (V3)."""
@@ -525,6 +550,78 @@ class Store:
             ],
         )
 
+    def _write_chunks(
+        self, file_id: int, path: str, parse_result: ParseResult, source: bytes
+    ) -> None:
+        symbols = self.symbols_in_file(path)
+        chunks = chunk_file(
+            source,
+            parse_result.parsed,
+            symbols,
+            self._schema_nodes_in_file(file_id),
+            self.chunk_config,
+            file_id=file_id,
+        )
+        by_id = {symbol.id: symbol for symbol in symbols}
+        for chunk in chunks:
+            cursor = self._connection.execute(
+                "INSERT INTO chunks (file_id, kind, start_byte, end_byte, context_header,"
+                " body_mode, oversize, content_hash, part) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    file_id,
+                    chunk.kind,
+                    chunk.start_byte,
+                    chunk.end_byte,
+                    chunk.context_header,
+                    chunk.body_mode,
+                    int(chunk.oversize),
+                    chunk.content_hash,
+                    chunk.part,
+                ),
+            )
+            chunk_id = _int(cursor.lastrowid)
+            self._connection.executemany(
+                "INSERT INTO chunk_symbols (chunk_id, symbol_id) VALUES (?, ?)",
+                [(chunk_id, symbol_id) for symbol_id in chunk.symbol_ids],
+            )
+            members = [by_id[symbol_id] for symbol_id in chunk.symbol_ids]
+            self._connection.execute(
+                "INSERT INTO fts_code (rowid, name, qualified_name, signature, docstring, body,"
+                " annotation, path) VALUES (?, ?, ?, ?, ?, ?, '', ?)",
+                (
+                    chunk_id,
+                    " ".join(m.name for m in members),
+                    " ".join(m.qualified_name for m in members),
+                    "\n".join(m.signature for m in members),
+                    "\n".join(m.docstring for m in members if m.docstring is not None),
+                    chunk.text,
+                    path,
+                ),
+            )
+
+    def _chunk_record(self, row: Row) -> Chunk:
+        chunk_id = _int(row[0])
+        members = self._query(
+            "SELECT s.id, s.qualified_name FROM chunk_symbols cs"
+            " JOIN symbols s ON s.id = cs.symbol_id WHERE cs.chunk_id = ? ORDER BY cs.rowid",
+            (chunk_id,),
+        )
+        return Chunk(
+            id=chunk_id,
+            file_id=_int(row[1]),
+            kind=_str(row[2]),
+            start_byte=_int(row[3]),
+            end_byte=_int(row[4]),
+            context_header=_str(row[5]),
+            body_mode=_body_mode(row[6]),
+            oversize=_int(row[7]) != 0,
+            content_hash=_str(row[8]),
+            symbol_ids=tuple(_int(member[0]) for member in members),
+            qualified_names=tuple(_str(member[1]) for member in members),
+            part=None if row[9] is None else _int(row[9]),
+            text=_str(row[10]),
+        )
+
     def _symbols(self, where: str, params: Sequence[SqlValue]) -> tuple[SymbolRecord, ...]:
         rows = self._query(
             "SELECT s.id, s.file_id, f.path, s.name, s.qualified_name, s.kind, s.parent,"
@@ -648,6 +745,15 @@ def _profile(value: object) -> FileProfile:
         if profile == text:
             return profile
     raise ValueError(f"unknown profile {text}")
+
+
+def _body_mode(value: object) -> BodyMode:
+    text = _str(value)
+    if text == "schema":
+        return "schema"
+    if text == "bytes":
+        return "bytes"
+    raise ValueError(f"unknown body mode {text}")
 
 
 def _names(value: object) -> tuple[str, ...]:

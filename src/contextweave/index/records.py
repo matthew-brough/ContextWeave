@@ -5,6 +5,7 @@ from contextweave.lang.model import LangError
 from contextweave.lang.registry import Group, Profile
 
 type FileProfile = Profile | Literal["text"]
+type BodyMode = Literal["bytes", "schema"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,3 +143,25 @@ class RefreshResult:
     check: StatCheck
     data: FileData | None
     persisted: bool
+
+
+@dataclass(frozen=True, slots=True)
+class Chunk:
+    """The unit embedded, annotated, FTS-indexed and ranked; id is 0 until persisted.
+
+    symbol_ids and qualified_names run in parallel with the anchor symbol first.
+    """
+
+    id: int
+    file_id: int
+    kind: str
+    start_byte: int
+    end_byte: int
+    context_header: str
+    body_mode: BodyMode
+    oversize: bool
+    content_hash: str
+    symbol_ids: tuple[int, ...]
+    qualified_names: tuple[str, ...]
+    part: int | None
+    text: str

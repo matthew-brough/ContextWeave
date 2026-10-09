@@ -20,7 +20,7 @@ class IndexReport:
 
 def index_project(root: Path, config: Config) -> IndexReport:
     """Reconcile the db with the tree: parse new and changed files, drop vanished ones."""
-    with Store.open(root) as store, store.writer_lock():
+    with Store.open(root, chunk_config=config.chunk) as store, store.writer_lock():
         known = {record.path: record for record in store.files()}
         walked = walk_project(root, config.index.ignore)
         added: list[str] = []

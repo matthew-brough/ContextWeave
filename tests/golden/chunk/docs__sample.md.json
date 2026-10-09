@@ -1,0 +1,11 @@
+[
+  {
+    "start_byte": 0,
+    "end_byte": 345,
+    "kind": "section",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": "b0-345"
+  }
+]

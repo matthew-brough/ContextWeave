@@ -1,0 +1,11 @@
+[
+  {
+    "start_byte": 0,
+    "end_byte": 111,
+    "kind": "stage",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": "build"
+  }
+]

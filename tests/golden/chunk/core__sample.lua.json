@@ -1,0 +1,20 @@
+[
+  {
+    "start_byte": 0,
+    "end_byte": 500,
+    "kind": "group",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": "M.add"
+  },
+  {
+    "start_byte": 502,
+    "end_byte": 648,
+    "kind": "glue",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": "b502-648"
+  }
+]

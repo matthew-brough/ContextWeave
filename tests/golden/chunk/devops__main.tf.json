@@ -1,0 +1,11 @@
+[
+  {
+    "start_byte": 0,
+    "end_byte": 226,
+    "kind": "glue",
+    "body_mode": "bytes",
+    "oversize": false,
+    "part": null,
+    "anchor": "aws_s3_bucket.assets"
+  }
+]
