@@ -8,9 +8,12 @@ from pathlib import Path
 
 from contextweave.core.config import Config
 from contextweave.core.errors import OmittedEntry
-from contextweave.eval.mcp_adapters import DISABLE_STAGE_ENV
+from contextweave.eval.mcp_adapters import DISABLE_STAGE_ENV, FULL_PROFILE, PROFILE_ENV
 from contextweave.index.projects import ProjectRegistry
 from contextweave.index.store import Store
+from contextweave.models.calibration import calibration_path, load_calibration
+from contextweave.models.residency import Profile
+from contextweave.models.slots import ModelSlots
 from contextweave.retrieve.stages import STAGE_SLOTS
 
 STAGE_NAMES = frozenset(slot.name for slot in STAGE_SLOTS)
@@ -60,9 +63,12 @@ class ToolContext:
     cwd: Path | None = None
     roots: tuple[Path, ...] = ()
     packs: PackCache = field(default_factory=lambda: PackCache(20))
+    models: ModelSlots | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "config", eval_config(self.config, os.environ))
+        if self.models is None:
+            object.__setattr__(self, "models", eval_models(self.config, os.environ))
 
 
 def eval_config(config: Config, env: Mapping[str, str]) -> Config:
@@ -71,3 +77,14 @@ def eval_config(config: Config, env: Mapping[str, str]) -> Config:
     if stage not in STAGE_NAMES:
         return config
     return replace(config, pipeline=replace(config.pipeline, **{stage: False}))
+
+
+def eval_models(config: Config, env: Mapping[str, str]) -> ModelSlots | None:
+    """Model slots in the serve residency profile when CW_EVAL_PROFILE is full, else none."""
+    if env.get(PROFILE_ENV) != FULL_PROFILE:
+        return None
+    slots = ModelSlots.from_config(
+        config.models, calibration=load_calibration(calibration_path(env))
+    )
+    slots.apply_profile(Profile.SERVE)
+    return slots

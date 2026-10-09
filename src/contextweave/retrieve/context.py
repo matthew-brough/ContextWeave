@@ -43,6 +43,23 @@ class PlanSlot:
         self.value: Plan | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class CoverageResult:
+    """The coverage stage's verdict: P(sufficient), expansion passes run, rels still missing."""
+
+    score: float
+    sufficient: bool
+    iterations: int
+    missing: tuple[str, ...] = ()
+
+
+class CoverageSlot:
+    """Mutable holder the coverage stage fills and assemble reads."""
+
+    def __init__(self) -> None:
+        self.value: CoverageResult | None = None
+
+
 class PackSlot:
     """Mutable holder the assemble stage fills with the finished pack."""
 
@@ -62,6 +79,7 @@ class QueryContext:
     envelope: Envelope = field(default_factory=Envelope)
     plan: PlanSlot = field(default_factory=PlanSlot)
     pack: PackSlot = field(default_factory=PackSlot)
+    coverage: CoverageSlot = field(default_factory=CoverageSlot)
     scope: str | None = None
     intent: str | None = None
     max_tokens: int = 6000

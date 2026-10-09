@@ -137,6 +137,7 @@ class ClassifyConfig:
     model: str = "jaredpalmer/kev-4b"
     devices: tuple[str, ...] = ("gpu", "cpu")
     question_set_version: int = 1
+    build_id: str = ""
     gpu: DeviceEndpointConfig = field(default_factory=_gpu_endpoint)
     cpu: DeviceEndpointConfig = field(default_factory=_cpu_endpoint)
 

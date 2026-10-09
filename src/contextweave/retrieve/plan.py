@@ -1,7 +1,10 @@
 import re
+from dataclasses import replace
 
 from contextweave.core.errors import ErrorEntry
 from contextweave.index.store import Store
+from contextweave.models.questions import SCOPE_DIR_LIMIT
+from contextweave.retrieve.ask import ask_stage
 from contextweave.retrieve.candidates import Candidate, CandidateSet, Ranks
 from contextweave.retrieve.context import Plan, QueryContext, RrfWeights
 from contextweave.retrieve.freshness import freshen
@@ -12,6 +15,10 @@ from contextweave.retrieve.score import mark_exact, with_final
 from contextweave.retrieve.terms import words
 
 STAGE_NAME = "plan"
+QUESTION_SET = "plan"
+RECENT_FILES = 10
+SCOPE_MIN_CONFIDENCE = 0.5
+GRAPH_MIN_PROBABILITY = 0.5
 INTENTS: tuple[str, ...] = (
     "lookup",
     "implementation",
@@ -205,8 +212,53 @@ def resolve_intent(ctx: QueryContext, default: str) -> str:
     return default
 
 
+def scope_hints(store: Store) -> tuple[list[str], list[str]]:
+    """Top-level directories (at most 30) and the paths of the 10 most recently touched files."""
+    paths = [as_str(row[0]) for row in store.query("SELECT path FROM files ORDER BY path")]
+    directories = sorted({path.split("/", 1)[0] for path in paths if "/" in path})
+    recent = store.query(
+        "SELECT path FROM files ORDER BY mtime_ns DESC, path LIMIT ?", (RECENT_FILES,)
+    )
+    return directories[:SCOPE_DIR_LIMIT], [as_str(row[0]) for row in recent]
+
+
+def plan_state(query: str, directories: list[str], recent: list[str]) -> str:
+    return (
+        f"query: {query}\ndirectories: {', '.join(directories)}\nrecent files: {', '.join(recent)}"
+    )
+
+
+def refine_with_model(ctx: QueryContext, rules: Plan, explicit_scope: str | None) -> Plan:
+    """Classifier intent, scope and graph need over a rules plan; the rules plan when skipped."""
+    if ctx.models is None:
+        return rules
+    directories, recent = scope_hints(ctx.store)
+    answers = ask_stage(
+        ctx,
+        QUESTION_SET,
+        [plan_state(ctx.query, directories, recent)],
+        stage=STAGE_NAME,
+        dynamic={"scope_dirs": directories},
+    )
+    if answers is None:
+        return rules
+    row = answers[0]
+    intent = rules.intent if ctx.intent in INTENTS else row.top("intent")
+    chosen = row.top("scope")
+    modelled = chosen in directories and row.confidence("scope") >= SCOPE_MIN_CONFIDENCE
+    scope = explicit_scope or (normalize_scope(chosen) if modelled else None)
+    needs_graph = row.value("needs_graph") >= GRAPH_MIN_PROBABILITY
+    return replace(
+        rules,
+        intent=intent,
+        scope=scope,
+        rels=INTENT_RELS[intent] if needs_graph else (),
+        planner="model",
+    )
+
+
 class PlanStage:
-    """Rules planner: fast-path check, then intent, scope, rrf weights and rels."""
+    """Rules first (fast path, intent, scope, rrf weights, rels); classify refines a non-fast-path plan."""
 
     name = STAGE_NAME
 
@@ -214,11 +266,14 @@ class PlanStage:
         scope = normalize_scope(ctx.scope) or rules_scope(ctx.store, ctx.query)
         hits = fast_path_candidates(ctx, scope)
         intent = resolve_intent(ctx, "lookup" if hits else rules_intent(ctx.query))
-        ctx.plan.value = Plan(
+        plan = Plan(
             intent=intent,
             scope=scope,
             rrf_weights=rules_weights(ctx.query),
             rels=() if hits else INTENT_RELS[intent],
             fast_path=bool(hits),
         )
+        if not hits:
+            plan = refine_with_model(ctx, plan, scope)
+        ctx.plan.value = plan
         return CandidateSet.of(hits) if hits else cands

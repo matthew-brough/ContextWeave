@@ -1,0 +1,12 @@
+question_set_version = 1
+
+[[question]]
+name = "sufficient"
+text = "Is the code listed in the pack enough to answer the query?"
+kind = "binary"
+
+[[question]]
+name = "missing_rel"
+text = "Which kind of related code is missing from the pack?"
+kind = "choice"
+options = ["callers", "callees", "imports", "tests", "config", "emitters", "listeners", "none"]

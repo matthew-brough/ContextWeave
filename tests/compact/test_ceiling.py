@@ -70,12 +70,12 @@ def test_overflow_tail_when_more_than_cap_are_omitted() -> None:
             store.close()
 
 
-def test_compact_stage_runs_between_dedupe_and_assemble() -> None:
+def test_compact_stage_runs_between_dedupe_and_coverage() -> None:
     with tempfile.TemporaryDirectory() as directory:
         store = corpus(Path(directory), 2, 3)
         try:
             result = search(store, Config(), "handler value")
             stages = [timing.stage for timing in result.timings]
-            assert stages[-2:] == ["compact", "assemble"]
+            assert stages[-3:] == ["compact", "coverage", "assemble"]
         finally:
             store.close()

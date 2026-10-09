@@ -5,16 +5,18 @@ from contextweave.core.config import Config
 from contextweave.core.errors import OmittedEntry
 from contextweave.core.refs import project_key
 from contextweave.index.store import Store
+from contextweave.models.slots import ModelSlots
 from contextweave.retrieve.assemble import AssembleStage
 from contextweave.retrieve.candidates import CandidateSet
 from contextweave.retrieve.context import Mode, QueryContext
+from contextweave.retrieve.coverage import CoverageStage
 from contextweave.retrieve.dedupe import DedupeStage
 from contextweave.retrieve.expand import ExpandStage
 from contextweave.retrieve.fuse import FuseStage
+from contextweave.retrieve.gate import GateStage, model_gate_pass
 from contextweave.retrieve.pack import ContextPack, PackResult
 from contextweave.retrieve.pack_text import TextRender, render_pack_text
 from contextweave.retrieve.plan import PlanStage
-from contextweave.retrieve.score import FallbackScoreStage
 from contextweave.retrieve.stages import StageRegistry, StageTiming, default_registry, run_pipeline
 
 
@@ -27,6 +29,7 @@ class SearchOptions:
     max_tokens: int | None = None
     mode: Mode = "auto"
     render: TextRender = render_pack_text
+    models: ModelSlots | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,14 +43,15 @@ class SearchResult:
 
 
 def full_registry(assembler: AssembleStage) -> StageRegistry:
-    """Every implemented stage: plan, retrieve, fuse, fallback gate, dedupe, assemble."""
+    """Every implemented stage in its fixed slot; model stages degrade to their fallbacks."""
     registry = default_registry()
     registry.register(PlanStage())
     registry.register(FuseStage())
-    registry.register(FallbackScoreStage())
-    registry.register(ExpandStage())
+    registry.register(GateStage())
+    registry.register(ExpandStage(model_gate_pass))
     registry.register(DedupeStage())
     registry.register(CompactStage())
+    registry.register(CoverageStage())
     registry.register(assembler)
     return registry
 
@@ -67,6 +71,7 @@ def search(
         intent=chosen.intent,
         max_tokens=chosen.max_tokens or config.budget.search_max_tokens,
         mode=chosen.mode,
+        models=chosen.models,
     )
     assembler = AssembleStage(chosen.render)
     run = run_pipeline(ctx, full_registry(assembler))

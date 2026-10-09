@@ -3,9 +3,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from contextweave.core.registry import Registry
-from contextweave.eval.adapters import AdapterContext, AdapterFactory
+from contextweave.eval.adapters import AdapterContext, AdapterFactory, ScoreSample
 from contextweave.eval.metrics import CaseResult, Metrics, aggregate, score_case
 from contextweave.eval.suite import Suite
+from contextweave.models.calibration import (
+    ECE_TARGET,
+    CalibrationSample,
+    QuestionCalibration,
+    report_question,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +22,21 @@ class RunReport:
     ablate: str | None
     metrics: Metrics
     results: tuple[CaseResult, ...]
+    variant: str | None = None
+    calibration: tuple[QuestionCalibration, ...] = ()
+
+    @property
+    def label(self) -> str:
+        base = self.adapter if self.variant is None else f"{self.adapter}[{self.variant}]"
+        return base if self.ablate is None else f"{base}-{self.ablate}"
+
+
+def calibration_of(samples: Sequence[ScoreSample]) -> tuple[QuestionCalibration, ...]:
+    """ECE and fitted temperature per question over the pooled samples."""
+    grouped: dict[str, list[CalibrationSample]] = {}
+    for sample in samples:
+        grouped.setdefault(sample.question, []).append(CalibrationSample(sample.prob, sample.label))
+    return tuple(report_question(question, grouped[question]) for question in sorted(grouped))
 
 
 def run_suite(
@@ -26,13 +47,15 @@ def run_suite(
     profile: str = "nomodel",
     ablate: str | None = None,
     env: Mapping[str, str] | None = None,
+    variant: str | None = None,
 ) -> RunReport:
     """Serve every case through the named adapter and score it."""
     expected = {case.query: case.expect for case in suite.cases}
     context = AdapterContext(root, profile, ablate, env or {}, expected)
     served = adapters.get(adapter)(context).serve_all([case.query for case in suite.cases])
     results = tuple(score_case(case, item) for case, item in zip(suite.cases, served, strict=True))
-    return RunReport(adapter, ablate, aggregate(results), results)
+    samples = [sample for item in served for sample in item.samples]
+    return RunReport(adapter, ablate, aggregate(results), results, variant, calibration_of(samples))
 
 
 def _pct(value: float) -> str:
@@ -56,11 +79,12 @@ def render_table(reports: Sequence[RunReport]) -> str:
         "model calls",
         "must_not",
         "errors",
+        "skips",
     )
     rows: list[tuple[str, ...]] = [header]
     for report in reports:
         m = report.metrics
-        label = report.adapter if report.ablate is None else f"{report.adapter}-{report.ablate}"
+        label = report.label
         rows.append(
             (
                 label,
@@ -73,6 +97,7 @@ def render_table(reports: Sequence[RunReport]) -> str:
                 str(m.model_calls),
                 str(m.must_not_hits),
                 str(m.errors),
+                str(m.skips),
             )
         )
     widths = [max(len(row[index]) for row in rows) for index in range(len(header))]
@@ -89,4 +114,20 @@ def render_delta(base: Metrics, ablated: Metrics, stage: str) -> str:
     lines.append(f"tokens/case {ablated.tokens - base.tokens:+.0f}")
     lines.append(f"p50 ms      {ablated.latency_p50_ms - base.latency_p50_ms:+.0f}")
     lines.append(f"model calls {ablated.model_calls - base.model_calls:+d}")
+    return "\n".join(lines)
+
+
+def render_calibration(reports: Sequence[RunReport]) -> str:
+    """Per-question ECE before and after temperature scaling for every report that has samples."""
+    lines: list[str] = []
+    for report in reports:
+        if not report.calibration:
+            continue
+        lines.append(f"calibration: {report.label} (target ECE <= {ECE_TARGET})")
+        for row in report.calibration:
+            verdict = "ok" if row.meets_target else "MISS"
+            lines.append(
+                f"  {row.question:<18} n={row.samples:<5} ece={row.ece:.3f} "
+                f"T={row.temperature:.2f} ece_after={row.ece_after:.3f} {verdict}"
+            )
     return "\n".join(lines)

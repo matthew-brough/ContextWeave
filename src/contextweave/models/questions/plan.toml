@@ -1,0 +1,19 @@
+question_set_version = 1
+
+[[question]]
+name = "intent"
+text = "What is the developer trying to learn from the code with this query?"
+kind = "choice"
+options = ["lookup", "implementation", "architecture", "debug", "config", "usage"]
+
+[[question]]
+name = "scope"
+text = "Which top-level directory of the repository does the query concern?"
+kind = "choice"
+options = ["any"]
+options_from = "scope_dirs"
+
+[[question]]
+name = "needs_graph"
+text = "Does answering require following relations to other code such as callers, callees or imports?"
+kind = "binary"

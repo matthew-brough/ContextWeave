@@ -1,0 +1,22 @@
+question_set_version = 1
+
+[[question]]
+name = "answers_query"
+text = "Does this code directly answer the query?"
+kind = "binary"
+
+[[question]]
+name = "relevance"
+text = "How relevant is this code to the query?"
+kind = "score"
+
+[[question]]
+name = "role"
+text = "What role does this code play with respect to the query?"
+kind = "choice"
+options = ["implementation", "interface", "caller", "test", "config", "boilerplate", "unrelated"]
+
+[[question]]
+name = "structural_value"
+text = "How much does this code's position in the codebase structure help explain the query?"
+kind = "score"

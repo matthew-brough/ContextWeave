@@ -20,6 +20,15 @@ class AdapterContext:
 
 
 @dataclass(frozen=True, slots=True)
+class ScoreSample:
+    """A classifier probability for one question and whether the served item was expected."""
+
+    question: str
+    prob: float
+    label: float
+
+
+@dataclass(frozen=True, slots=True)
 class Served:
     """What a system returned for one query; error marks a degraded result."""
 
@@ -29,6 +38,8 @@ class Served:
     model_calls: int = 0
     verdict_covered: bool | None = None
     error: str | None = None
+    samples: tuple[ScoreSample, ...] = ()
+    skips: int = 0
 
 
 class Adapter(Protocol):

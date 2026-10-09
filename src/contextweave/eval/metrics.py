@@ -19,6 +19,7 @@ class CaseResult:
     must_not_hits: int
     verdict_correct: bool | None
     error: str | None
+    skips: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +36,7 @@ class Metrics:
     model_calls: int
     must_not_hits: int
     errors: int
+    skips: int = 0
 
 
 def score_case(case: Case, served: Served) -> CaseResult:
@@ -57,6 +59,7 @@ def score_case(case: Case, served: Served) -> CaseResult:
         must_not_hits=len(items & set(case.must_not)),
         verdict_correct=verdict_correct,
         error=served.error,
+        skips=served.skips,
     )
 
 
@@ -88,4 +91,5 @@ def aggregate(results: Sequence[CaseResult]) -> Metrics:
         model_calls=sum(result.model_calls for result in results),
         must_not_hits=sum(result.must_not_hits for result in results),
         errors=sum(1 for result in results if result.error is not None),
+        skips=sum(result.skips for result in results),
     )

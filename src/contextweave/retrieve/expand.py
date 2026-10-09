@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Protocol
 
@@ -24,6 +24,17 @@ class Expanded:
     hops: int
     rel: str
     seed: Candidate
+
+
+type SeedValue = Callable[[Candidate], float]
+
+
+def gate_of(cand: Candidate) -> float:
+    return cand.scores.gate
+
+
+def final_of(cand: Candidate) -> float:
+    return cand.scores.final
 
 
 class GatePassTwo(Protocol):
@@ -63,14 +74,26 @@ class ExpandStage:
 
     def run(self, ctx: QueryContext, cands: CandidateSet) -> CandidateSet:
         plan = ctx.plan.value
-        if plan is None or not plan.rels or len(cands) == 0:
+        if plan is None:
             return cands
-        config = ctx.config.expand
-        seeds = [cand for cand in cands if cand.scores.gate >= config.min_score]
+        return self.expand(ctx, cands, plan.rels, ctx.config.expand.max_depth, gate_of)
+
+    def expand(
+        self,
+        ctx: QueryContext,
+        cands: CandidateSet,
+        rels: tuple[str, ...],
+        max_depth: int,
+        seed_value: SeedValue,
+    ) -> CandidateSet:
+        """Walk rels from candidates whose seed_value reaches expand.min_score; reached chunks join."""
+        if not rels or len(cands) == 0:
+            return cands
+        seeds = [cand for cand in cands if seed_value(cand) >= ctx.config.expand.min_score]
         if not seeds:
             return cands
         owners = _seed_endpoints(ctx, seeds)
-        reach = walk(ctx.store, list(owners), plan.rels, config.max_depth)
+        reach = walk(ctx.store, list(owners), rels, max_depth)
         origin = _origins(owners, reach.hops)
         placed = _place_hops(ctx, reach.hops)
         known = {cand.chunk_id for cand in cands}

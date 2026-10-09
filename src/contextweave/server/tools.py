@@ -968,6 +968,7 @@ def _context_search(call: Call[ContextPack], args: ContextSearchArgs) -> Context
         max_tokens=args.get("max_tokens"),
         mode=args.get("mode", "auto"),
         render=render_context_search,
+        models=call.ctx.models,
     )
     result = search(call.snap.store, call.ctx.config, args["query"], options)
     if result.omitted:

@@ -56,6 +56,7 @@ def test_full_pipeline_runs_all_implemented_stages_in_order(store: Store) -> Non
         "expand",
         "dedupe",
         "compact",
+        "coverage",
         "assemble",
     ]
     pack = result.pack

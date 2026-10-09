@@ -9,9 +9,14 @@ from contextweave.core.config import ModelsConfig
 from contextweave.core.errors import DegradedEntry
 from contextweave.core.registry import UnknownKeyError
 from contextweave.core.types import JSON
+from contextweave.models.calibration import Calibration, CalibrationKey
+from contextweave.models.clef import build_clef
 from contextweave.models.decision import (
+    Answers,
     DecisionClient,
     NullDecisionClient,
+    Question,
+    answers_from,
     ensure_decision_client,
 )
 from contextweave.models.errors import (
@@ -22,6 +27,7 @@ from contextweave.models.errors import (
     ProviderSlotError,
 )
 from contextweave.models.health import Clock, HealthStatus, SlotHealth, Submit
+from contextweave.models.kev import build_kev
 from contextweave.models.null import NONE_CHAIN, build_null_annotate, build_null_embed
 from contextweave.models.ollama import build_ollama_annotate, build_ollama_embed
 from contextweave.models.openai_compat import build_openai_annotate, build_openai_embed
@@ -33,6 +39,7 @@ from contextweave.models.providers import (
     EmbedKind,
     Endpoints,
     Message,
+    Provider,
     ProviderRegistries,
     Slot,
 )
@@ -63,7 +70,7 @@ type Outcome[T] = Done[T] | Skipped
 
 
 def default_registries() -> ProviderRegistries:
-    """Registries with the built-in providers (kev/clef arrive with T20)."""
+    """Registries with the built-in providers."""
     registries = ProviderRegistries()
     registries.embed.register("ollama", build_ollama_embed)
     registries.embed.register("openai_compat", build_openai_embed)
@@ -71,6 +78,8 @@ def default_registries() -> ProviderRegistries:
     registries.annotate.register("ollama", build_ollama_annotate)
     registries.annotate.register("openai_compat", build_openai_annotate)
     registries.annotate.register(NONE, build_null_annotate)
+    registries.classify.register("kev", build_kev)
+    registries.classify.register("clef", build_clef)
     registries.classify.register(NONE, lambda ctx: NullDecisionClient())
     return registries
 
@@ -102,6 +111,7 @@ class ModelSlots:
     deadline_s: float
     clock: Clock
     issues: tuple[str, ...] = field(default=())
+    temperatures: Mapping[str, float] = field(default_factory=dict[str, float])
 
     @classmethod
     def from_config(
@@ -115,6 +125,7 @@ class ModelSlots:
         submit: Submit | None = None,
         launcher: ProcessLauncher | None = None,
         probe: Probe | None = None,
+        calibration: Calibration | None = None,
     ) -> ModelSlots:
         """Build clients, health state and residency from config."""
         available = registries or default_registries()
@@ -143,7 +154,7 @@ class ModelSlots:
         warms: Mapping[Slot, Callable[[Device], None]] = {
             Slot.EMBED: embed.set_device,
             Slot.ANNOTATE: annotate.set_device,
-            Slot.CLASSIFY: backend.warm,
+            Slot.CLASSIFY: _classify_warm(backend, decision),
         }
         worker = submit or thread_submit()
         healths = {
@@ -166,6 +177,7 @@ class ModelSlots:
             models.deadline_ms / 1000,
             clock,
             tuple(issues),
+            (calibration or Calibration()).temperatures(_calibration_key(models)),
         )
 
     def call[T](self, slot: Slot, fn: Callable[[], T], *, stage: str | None = None) -> Outcome[T]:
@@ -218,6 +230,17 @@ class ModelSlots:
             stage=stage,
         )
 
+    def ask(
+        self, states: Sequence[str], questions: Sequence[Question], *, stage: str
+    ) -> Outcome[list[Answers]]:
+        """One decide() call over all states; shape-checked and wrapped with the fitted temperatures."""
+
+        def run() -> list[Answers]:
+            rows = self.clients.decision.decide(states, questions)
+            return answers_from(rows, len(states), questions, self.temperatures)
+
+        return self.call(Slot.CLASSIFY, run, stage=stage)
+
     def apply_profile(self, profile: Profile) -> None:
         """Switch residency profile."""
         self.residency.apply(profile)
@@ -225,6 +248,20 @@ class ModelSlots:
     def status(self) -> tuple[HealthStatus, ...]:
         """Per-slot health snapshots."""
         return tuple(health.status() for health in self.healths.values())
+
+
+def _calibration_key(models: ModelsConfig) -> CalibrationKey:
+    classify = models.classify
+    return CalibrationKey(classify.model, classify.build_id, classify.question_set_version)
+
+
+def _classify_warm(backend: ClassifyBackend, decision: DecisionClient) -> Callable[[Device], None]:
+    def warm(device: Device) -> None:
+        backend.warm(device)
+        if isinstance(decision, Provider):
+            decision.set_device(device)
+
+    return warm
 
 
 def _build[C](

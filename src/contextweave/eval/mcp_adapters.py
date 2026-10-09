@@ -13,15 +13,20 @@ from mcp.client.stdio import stdio_client
 from contextweave.core.budget import measure_payload
 from contextweave.core.config import load_config
 from contextweave.core.paths import user_state_dir
-from contextweave.eval.adapters import Adapter, AdapterContext, Served, degraded
+from contextweave.eval.adapters import Adapter, AdapterContext, ScoreSample, Served, degraded
 from contextweave.eval.jsonvalue import JSON
 from contextweave.index.indexer import index_project
 from contextweave.index.projects import ProjectRegistry
+from contextweave.models.calibration import CALIBRATION_FILE_ENV, calibration_path
 
 AST_MCP_COMMAND = "ast-mcp"
 CW_COMMAND = "cw"
 DISABLE_STAGE_ENV = "CW_EVAL_DISABLE_STAGE"
 PROFILE_ENV = "CW_EVAL_PROFILE"
+FULL_PROFILE = "full"
+CLASSIFY_STAGES = frozenset({"plan", "gate", "expand", "coverage"})
+GATE_QUESTIONS = ("answers_query", "relevance", "structural_value")
+SUFFICIENT_QUESTION = "sufficient"
 OMITTED_KEY = "omitted"
 STATE_HOME_ENV = "XDG_STATE_HOME"
 CALL_TIMEOUT_SECONDS = 120.0
@@ -75,6 +80,58 @@ def extract_model_calls(payload: JSON) -> int:
     return calls if isinstance(calls, int) and not isinstance(calls, bool) else 0
 
 
+def _number(value: JSON) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def classify_active(payload: JSON) -> bool:
+    """True when the pack was scored by a live classifier: a device is declared and no classify stage skipped."""
+    if not isinstance(payload, dict):
+        return False
+    plan = payload.get("plan")
+    devices = plan.get("devices") if isinstance(plan, dict) else None
+    device = devices.get("classify") if isinstance(devices, dict) else None
+    return isinstance(device, str) and device != "none" and count_skips(payload) == 0
+
+
+def count_skips(payload: JSON) -> int:
+    """Degraded entries raised by classify-backed stages."""
+    entries = payload.get("degraded") if isinstance(payload, dict) else None
+    if not isinstance(entries, list):
+        return 0
+    return sum(
+        1 for entry in entries if isinstance(entry, dict) and entry.get("stage") in CLASSIFY_STAGES
+    )
+
+
+def extract_samples(payload: JSON, expected: Sequence[str]) -> tuple[ScoreSample, ...]:
+    """Per-item gate probabilities and the pack's sufficiency, labelled by membership in expected."""
+    if not classify_active(payload) or not isinstance(payload, dict):
+        return ()
+    wanted = set(expected)
+    entries: list[dict[str, JSON]] = []
+    _walk(payload, entries)
+    samples: list[ScoreSample] = []
+    served: set[str] = set()
+    for item in entries:
+        scores = item.get("scores")
+        name = item.get("qualified_name")
+        if not isinstance(scores, dict) or not isinstance(name, str):
+            continue
+        served.add(name)
+        for question in GATE_QUESTIONS:
+            prob = _number(scores.get(question))
+            if prob is not None:
+                samples.append(ScoreSample(question, prob, 1.0 if name in wanted else 0.0))
+    coverage = payload.get("coverage")
+    score = _number(coverage.get("score")) if isinstance(coverage, dict) else None
+    if score is not None and wanted:
+        samples.append(ScoreSample(SUFFICIENT_QUESTION, score, 1.0 if wanted <= served else 0.0))
+    return tuple(samples)
+
+
 def _payload(structured: Mapping[str, object] | None, text: str) -> JSON:
     if structured is not None:
         return json.loads(json.dumps(structured))
@@ -84,7 +141,9 @@ def _payload(structured: Mapping[str, object] | None, text: str) -> JSON:
         return None
 
 
-async def _query(session: ClientSession, target: ToolTarget, query: str) -> Served:
+async def _query(
+    session: ClientSession, target: ToolTarget, query: str, expected: Sequence[str]
+) -> Served:
     started = time.perf_counter()
     arguments: dict[str, JSON] = {**target.query_args, "query": query}
     result = await session.call_tool(
@@ -103,6 +162,8 @@ async def _query(session: ClientSession, target: ToolTarget, query: str) -> Serv
         extract_model_calls(payload),
         extract_covered(payload),
         error,
+        extract_samples(payload, expected),
+        count_skips(payload),
     )
 
 
@@ -123,7 +184,11 @@ async def _drive(
     target: ToolTarget, context: AdapterContext, queries: Sequence[str]
 ) -> tuple[Served, ...]:
     base = _prepare(context.root, context.env) if target.indexed else context.env
-    env = {**base, PROFILE_ENV: context.profile}
+    env = {
+        **base,
+        PROFILE_ENV: context.profile,
+        CALIBRATION_FILE_ENV: str(calibration_path(context.env)),
+    }
     if context.ablate is not None:
         env[DISABLE_STAGE_ENV] = context.ablate
     params = StdioServerParameters(
@@ -134,7 +199,12 @@ async def _drive(
         tools = {tool.name for tool in (await session.list_tools()).tools}
         if target.tool not in tools:
             return degraded(len(queries), f"tool missing: {target.tool}")
-        return tuple([await _query(session, target, query) for query in queries])
+        return tuple(
+            [
+                await _query(session, target, query, context.expected.get(query, ()))
+                for query in queries
+            ]
+        )
 
 
 class McpAdapter:

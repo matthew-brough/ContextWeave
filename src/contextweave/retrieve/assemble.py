@@ -24,6 +24,7 @@ from contextweave.core.refs import (
 )
 from contextweave.index.records import Chunk, SymbolRecord
 from contextweave.index.store import Store, hash_bytes
+from contextweave.models.providers import Device, Slot
 from contextweave.retrieve.candidates import Candidate, CandidateSet
 from contextweave.retrieve.context import QueryContext
 from contextweave.retrieve.ladder import next_rung
@@ -166,6 +167,28 @@ def pack_id_of(ctx: QueryContext, limit: int) -> str:
     return hashlib.sha256("\0".join(parts).encode()).hexdigest()[:HASH_LENGTH]
 
 
+def device_of(ctx: QueryContext, slot: Slot) -> str:
+    models = ctx.models
+    active = None if models is None else models.healths[slot].active
+    return Device.NONE.value if active is None else active.value
+
+
+def devices_wire(ctx: QueryContext) -> DevicesWire:
+    return DevicesWire(embed=device_of(ctx, Slot.EMBED), classify=device_of(ctx, Slot.CLASSIFY))
+
+
+def coverage_wire(ctx: QueryContext) -> CoverageWire:
+    found = ctx.coverage.value
+    if found is None:
+        return CoverageWire(score=0.0, sufficient=False, iterations=0, missing=[])
+    return CoverageWire(
+        score=found.score,
+        sufficient=found.sufficient,
+        iterations=found.iterations,
+        missing=list(found.missing),
+    )
+
+
 def plan_wire(ctx: QueryContext) -> PlanWire:
     plan = ctx.plan.value or DEFAULT_PLAN
     weights = plan.rrf_weights
@@ -179,7 +202,7 @@ def plan_wire(ctx: QueryContext) -> PlanWire:
         compaction=plan.compaction,
         fast_path=plan.fast_path,
         planner=plan.planner,
-        devices=DevicesWire(embed="none", classify="none"),
+        devices=devices_wire(ctx),
     )
 
 
@@ -227,7 +250,7 @@ class Fitter:
         pack = ContextPack(
             pack_id=self.pack_id,
             plan=self.plan,
-            coverage=CoverageWire(score=0.0, sufficient=False, iterations=0, missing=[]),
+            coverage=coverage_wire(self.ctx),
             items=[item.to_wire() for item in ordered_items(live)],
             omitted=entries,
             budget=budget,
