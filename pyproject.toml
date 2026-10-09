@@ -1,7 +1,55 @@
 [project]
 name = "contextweave"
 version = "0.1.0"
-description = "Add your description here"
+description = "Unified code-context MCP server: structural, lexical and semantic retrieval with session memory"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "mcp>=2.3.0",
+    "msgpack>=1.2.3",
+    "sqlite-vec>=0.1.9",
+    "tomli-w>=1.2.0",
+    "tree-sitter==0.26.*",
+    "tree-sitter-language-pack>=1.21.0",
+]
+
+[project.scripts]
+contextweave = "contextweave.cli:main"
+cw = "contextweave.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.168.5",
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+]
+
+[tool.pyright]
+include = ["src", "tests"]
+stubPath = "typings"
+typeCheckingMode = "strict"
+pythonVersion = "3.14"
+reportMissingTypeStubs = "error"
+reportUnnecessaryTypeIgnoreComment = "error"
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ANN", "RUF", "SIM", "PTH", "PGH"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["daemon: needs unix-socket daemon (Linux/WSL2 only)"]
