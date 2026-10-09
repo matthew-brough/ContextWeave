@@ -89,6 +89,30 @@ class ResolveContext:
                 return parts[1]
         return None
 
+    def package(self, directory: str) -> JSON:
+        """Parsed package.json of a directory, None when absent or invalid."""
+        text = self.text(posixpath.join(directory, "package.json"))
+        if text is None:
+            return None
+        try:
+            return json.loads(text)
+        except ValueError:
+            return None
+
+    @cached_property
+    def packages(self) -> dict[str, str]:
+        """Directory of every indexed package.json by its package name."""
+        found: dict[str, str] = {}
+        for _file_id, path in sorted(self.paths.items()):
+            if posixpath.basename(path) != "package.json":
+                continue
+            directory = posixpath.dirname(path)
+            loaded = self.package(directory)
+            name = loaded.get("name") if isinstance(loaded, dict) else None
+            if isinstance(name, str):
+                found.setdefault(name, directory)
+        return found
+
     @cached_property
     def ts_paths(self) -> tuple[tuple[str, tuple[str, ...]], ...]:
         """Alias patterns of tsconfig.json or jsconfig.json joined with baseUrl."""
@@ -189,21 +213,82 @@ def _js_candidates(base: str) -> tuple[str, ...]:
     )
 
 
+CONDITIONS = ("import", "require", "node", "default")
+
+
+def _export_target(value: JSON) -> str | None:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return next((found for item in value if (found := _export_target(item))), None)
+    if isinstance(value, dict):
+        return next(
+            (found for key in CONDITIONS if key in value and (found := _export_target(value[key]))),
+            None,
+        )
+    return None
+
+
+def _package_entry(context: ResolveContext, directory: str, subpath: str) -> tuple[int, ...]:
+    loaded = context.package(directory)
+    if not isinstance(loaded, dict):
+        return ()
+    target: str | None = None
+    exports = loaded.get("exports")
+    key = "." if not subpath else f"./{subpath}"
+    if isinstance(exports, dict) and any(name.startswith(".") for name in exports):
+        target = _export_target(exports.get(key))
+    elif not subpath:
+        target = _export_target(exports)
+    main = loaded.get("main")
+    if target is None and not subpath and isinstance(main, str):
+        target = main
+    if target is None:
+        return ()
+    return context.first_existing(
+        _js_candidates(posixpath.normpath(posixpath.join(directory, target)))
+    )
+
+
+def _js_path(context: ResolveContext, base: str) -> tuple[int, ...]:
+    candidates = _js_candidates(base)
+    plain = tuple(
+        candidate for candidate in candidates if not candidate.startswith(base + "/index")
+    )
+    return (
+        context.first_existing(plain)
+        or _package_entry(context, base, "")
+        or context.first_existing(candidates)
+    )
+
+
+def _js_package(context: ResolveContext, module: str) -> tuple[int, ...]:
+    for name, directory in context.packages.items():
+        if module == name:
+            return _package_entry(context, directory, "") or _js_path(context, directory)
+        if module.startswith(name + "/"):
+            subpath = module.removeprefix(name + "/")
+            return _package_entry(context, directory, subpath) or _js_path(
+                context, posixpath.normpath(posixpath.join(directory, subpath))
+            )
+    return ()
+
+
 def _js_imports(context: ResolveContext, site: ImportSite) -> tuple[int, ...]:
     module = site.module
     if module.startswith("."):
         joined = posixpath.normpath(posixpath.join(posixpath.dirname(site.path), module))
-        return context.first_existing(_js_candidates(joined))
+        return _js_path(context, joined)
     for pattern, targets in context.ts_paths:
         star = pattern.endswith("*")
         stem = pattern.removesuffix("*")
         if (star and module.startswith(stem)) or module == pattern:
             rest = module.removeprefix(stem) if star else ""
             for target in targets:
-                found = context.first_existing(_js_candidates(target.replace("*", rest)))
+                found = _js_path(context, target.replace("*", rest))
                 if found:
                     return found
-    return ()
+    return _js_package(context, module.removeprefix("node:"))
 
 
 def _go_imports(context: ResolveContext, site: ImportSite) -> tuple[int, ...]:

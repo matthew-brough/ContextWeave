@@ -10,6 +10,15 @@
       "line": 1
     },
     {
+      "kind": "emit",
+      "name": "vrp",
+      "qualifier": "module",
+      "is_self": false,
+      "start_byte": 14,
+      "end_byte": 40,
+      "line": 1
+    },
+    {
       "kind": "string",
       "name": "lib/Proxy",
       "qualifier": null,
@@ -22,6 +31,15 @@
       "kind": "call",
       "name": "module",
       "qualifier": null,
+      "is_self": false,
+      "start_byte": 56,
+      "end_byte": 83,
+      "line": 2
+    },
+    {
+      "kind": "emit",
+      "name": "vrp",
+      "qualifier": "module",
       "is_self": false,
       "start_byte": 56,
       "end_byte": 83,
@@ -46,9 +64,27 @@
       "line": 3
     },
     {
+      "kind": "emit",
+      "name": "json",
+      "qualifier": "require",
+      "is_self": false,
+      "start_byte": 97,
+      "end_byte": 111,
+      "line": 3
+    },
+    {
       "kind": "call",
       "name": "require",
       "qualifier": null,
+      "is_self": false,
+      "start_byte": 127,
+      "end_byte": 148,
+      "line": 4
+    },
+    {
+      "kind": "emit",
+      "name": "lib.helper",
+      "qualifier": "require",
       "is_self": false,
       "start_byte": 127,
       "end_byte": 148,
@@ -73,9 +109,27 @@
       "line": 5
     },
     {
+      "kind": "emit",
+      "name": "x",
+      "qualifier": "notanimport",
+      "is_self": false,
+      "start_byte": 163,
+      "end_byte": 179,
+      "line": 5
+    },
+    {
       "kind": "call",
       "name": "RegisterNUICallback",
       "qualifier": null,
+      "is_self": false,
+      "start_byte": 181,
+      "end_byte": 248,
+      "line": 7
+    },
+    {
+      "kind": "emit",
+      "name": "closeMenu",
+      "qualifier": "RegisterNUICallback",
       "is_self": false,
       "start_byte": 181,
       "end_byte": 248,
@@ -91,9 +145,27 @@
       "line": 8
     },
     {
+      "kind": "emit",
+      "name": "ok",
+      "qualifier": "cb",
+      "is_self": false,
+      "start_byte": 235,
+      "end_byte": 243,
+      "line": 8
+    },
+    {
       "kind": "call",
       "name": "AddEventHandler",
       "qualifier": null,
+      "is_self": false,
+      "start_byte": 250,
+      "end_byte": 349,
+      "line": 11
+    },
+    {
+      "kind": "emit",
+      "name": "vrp:playerSpawn",
+      "qualifier": "AddEventHandler",
       "is_self": false,
       "start_byte": 250,
       "end_byte": 349,
@@ -109,6 +181,15 @@
       "line": 15
     },
     {
+      "kind": "emit",
+      "name": "vrpcmd",
+      "qualifier": "RegisterCommand",
+      "is_self": false,
+      "start_byte": 351,
+      "end_byte": 425,
+      "line": 15
+    },
+    {
       "kind": "call",
       "name": "RegisterSecureServerEvent",
       "qualifier": null,
@@ -118,9 +199,27 @@
       "line": 19
     },
     {
+      "kind": "emit",
+      "name": "vrp:secure",
+      "qualifier": "RegisterSecureServerEvent",
+      "is_self": false,
+      "start_byte": 427,
+      "end_byte": 493,
+      "line": 19
+    },
+    {
       "kind": "call",
       "name": "exports",
       "qualifier": null,
+      "is_self": false,
+      "start_byte": 495,
+      "end_byte": 542,
+      "line": 23
+    },
+    {
+      "kind": "emit",
+      "name": "vrpExport",
+      "qualifier": "exports",
       "is_self": false,
       "start_byte": 495,
       "end_byte": 542,

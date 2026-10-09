@@ -32,6 +32,7 @@
 ; string, which keeps `query("sql", args, cb)`-style callbacks out.
 (assignment_expression
   left: (element_access_expression
+    expression: (_) @handler.registrar
     subscript: (bracketed_argument_list
       . (argument (string_literal (string_literal_content) @name))))
   right: [
@@ -41,6 +42,7 @@
   ]) @def.handler
 
 (invocation_expression
+  function: (_) @handler.registrar
   arguments: (argument_list
     . (argument (string_literal (string_literal_content) @name))
     .

@@ -30,6 +30,7 @@ class Symbol:
     signature: str
     docstring: str | None
     parent: str | None
+    registrar: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

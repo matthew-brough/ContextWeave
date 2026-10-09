@@ -1,0 +1,517 @@
+[
+  {
+    "source": "duel/client/Client.cs",
+    "line": 12,
+    "emitter": "ClientScript.ClientScript.duel:csClient",
+    "handler": "duel:serverHello",
+    "target": "duel/server/main.lua",
+    "event": "duel:serverHello",
+    "net": true,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "server"
+    ]
+  },
+  {
+    "source": "duel/client/Client.cs",
+    "line": 13,
+    "emitter": "ClientScript.ClientScript.duel:csClient",
+    "handler": "duel:both",
+    "target": "duel/server/main.lua",
+    "event": "duel:both",
+    "net": true,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "server"
+    ]
+  },
+  {
+    "source": "duel/client/Client.cs",
+    "line": 13,
+    "emitter": "ClientScript.ClientScript.duel:csClient",
+    "handler": "duel:both",
+    "target": "duel/tools/orphan.lua",
+    "event": "duel:both",
+    "net": true,
+    "from": [
+      "client"
+    ],
+    "to": []
+  },
+  {
+    "source": "duel/client/main.lua",
+    "line": 14,
+    "emitter": "duel",
+    "handler": "duel:serverHello",
+    "target": "duel/server/main.lua",
+    "event": "duel:serverHello",
+    "net": true,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "server"
+    ]
+  },
+  {
+    "source": "duel/client/main.lua",
+    "line": 15,
+    "emitter": "duel",
+    "handler": "ServerScript.ServerScript.duel:csServer",
+    "target": "duel/server/Server.cs",
+    "event": "duel:csServer",
+    "net": true,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "server"
+    ]
+  },
+  {
+    "source": "duel/client/main.lua",
+    "line": 16,
+    "emitter": "duel",
+    "handler": "duel:bulk",
+    "target": "duel/server/main.lua",
+    "event": "duel:bulk",
+    "net": true,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "server"
+    ]
+  },
+  {
+    "source": "duel/client/main.lua",
+    "line": 17,
+    "emitter": "duel",
+    "handler": "duel:local",
+    "target": "duel/client/main.lua",
+    "event": "duel:local",
+    "net": false,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "duel/client/main.lua",
+    "line": 18,
+    "emitter": "duel",
+    "handler": "duel:both",
+    "target": "duel/client/main.lua",
+    "event": "duel:both",
+    "net": false,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "duel/client/main.lua",
+    "line": 18,
+    "emitter": "duel",
+    "handler": "duel:both",
+    "target": "duel/tools/orphan.lua",
+    "event": "duel:both",
+    "net": false,
+    "from": [
+      "client"
+    ],
+    "to": []
+  },
+  {
+    "source": "duel/client/main.lua",
+    "line": 19,
+    "emitter": "duel",
+    "handler": "duel:both",
+    "target": "duel/server/main.lua",
+    "event": "duel:both",
+    "net": true,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "server"
+    ]
+  },
+  {
+    "source": "duel/client/main.lua",
+    "line": 20,
+    "emitter": "duel",
+    "handler": "duel:sharedHook",
+    "target": "duel/shared.lua",
+    "event": "duel:sharedHook",
+    "net": false,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "shared"
+    ]
+  },
+  {
+    "source": "duel/server/Server.cs",
+    "line": 12,
+    "emitter": "ServerScript.ServerScript.duel:csServer",
+    "handler": "duel:clientPing",
+    "target": "duel/client/main.lua",
+    "event": "duel:clientPing",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "duel/server/Server.cs",
+    "line": 13,
+    "emitter": "ServerScript.ServerScript.duel:csServer",
+    "handler": "ClientScript.ClientScript.duel:csClient",
+    "target": "duel/client/Client.cs",
+    "event": "duel:csClient",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "duel/server/main.lua",
+    "line": 3,
+    "emitter": "duel:serverHello",
+    "handler": "duel:clientPing",
+    "target": "duel/client/main.lua",
+    "event": "duel:clientPing",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "duel/server/main.lua",
+    "line": 4,
+    "emitter": "duel:serverHello",
+    "handler": "ClientScript.ClientScript.duel:csClient",
+    "target": "duel/client/Client.cs",
+    "event": "duel:csClient",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "duel/server/main.lua",
+    "line": 5,
+    "emitter": "duel:serverHello",
+    "handler": "duel:both",
+    "target": "duel/client/main.lua",
+    "event": "duel:both",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "duel/server/main.lua",
+    "line": 5,
+    "emitter": "duel:serverHello",
+    "handler": "duel:both",
+    "target": "duel/tools/orphan.lua",
+    "event": "duel:both",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": []
+  },
+  {
+    "source": "duel/server/main.lua",
+    "line": 6,
+    "emitter": "duel:serverHello",
+    "handler": "duel:both",
+    "target": "duel/server/main.lua",
+    "event": "duel:both",
+    "net": false,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "server"
+    ]
+  },
+  {
+    "source": "duel/server/main.lua",
+    "line": 7,
+    "emitter": "duel:serverHello",
+    "handler": "duel:sharedHook",
+    "target": "duel/shared.lua",
+    "event": "duel:sharedHook",
+    "net": false,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "shared"
+    ]
+  },
+  {
+    "source": "duel/tools/orphan.lua",
+    "line": 5,
+    "emitter": "",
+    "handler": "duel:clientPing",
+    "target": "duel/client/main.lua",
+    "event": "duel:clientPing",
+    "net": true,
+    "from": [],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "node16/client.js",
+    "line": 8,
+    "emitter": "",
+    "handler": "n16:ping",
+    "target": "node16/server.js",
+    "event": "n16:ping",
+    "net": true,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "server"
+    ]
+  },
+  {
+    "source": "node16/server.js",
+    "line": 5,
+    "emitter": "n16:ping",
+    "handler": "n16:pong",
+    "target": "node16/client.js",
+    "event": "n16:pong",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "node16/server.js",
+    "line": 6,
+    "emitter": "n16:ping",
+    "handler": "duel:clientPing",
+    "target": "duel/client/main.lua",
+    "event": "duel:clientPing",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "node16/server.js",
+    "line": 7,
+    "emitter": "n16:ping",
+    "handler": "n16:local",
+    "target": "node16/server.js",
+    "event": "n16:local",
+    "net": false,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "server"
+    ]
+  },
+  {
+    "source": "node22/client.js",
+    "line": 7,
+    "emitter": "",
+    "handler": "n22:ping",
+    "target": "node22/server.js",
+    "event": "n22:ping",
+    "net": true,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "server"
+    ]
+  },
+  {
+    "source": "node22/server.js",
+    "line": 5,
+    "emitter": "n22:ping",
+    "handler": "n22:pong",
+    "target": "node22/client.js",
+    "event": "n22:pong",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "node22/server.js",
+    "line": 6,
+    "emitter": "n22:ping",
+    "handler": "ClientScript.ClientScript.duel:csClient",
+    "target": "duel/client/Client.cs",
+    "event": "duel:csClient",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "node22/server.js",
+    "line": 10,
+    "emitter": "",
+    "handler": "duel:sharedHook",
+    "target": "duel/shared.lua",
+    "event": "duel:sharedHook",
+    "net": false,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "shared"
+    ]
+  },
+  {
+    "source": "node26/client.js",
+    "line": 2,
+    "emitter": "",
+    "handler": "n26:ping",
+    "target": "node26/server.js",
+    "event": "n26:ping",
+    "net": true,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "server"
+    ]
+  },
+  {
+    "source": "node26/server.js",
+    "line": 7,
+    "emitter": "n26:ping",
+    "handler": "n26:pong",
+    "target": "node26/client.js",
+    "event": "n26:pong",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "node26/server.js",
+    "line": 8,
+    "emitter": "n26:ping",
+    "handler": "registerAll.n26:late",
+    "target": "node26/lib/handlers.js",
+    "event": "n26:late",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": []
+  },
+  {
+    "source": "tsres/client/main.ts",
+    "line": 5,
+    "emitter": "",
+    "handler": "ts:ping",
+    "target": "tsres/server/main.ts",
+    "event": "ts:ping",
+    "net": true,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "server"
+    ]
+  },
+  {
+    "source": "tsres/client/main.ts",
+    "line": 6,
+    "emitter": "",
+    "handler": "ts:ui",
+    "target": "tsres/client/ui.tsx",
+    "event": "ts:ui",
+    "net": false,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "tsres/server/main.ts",
+    "line": 6,
+    "emitter": "ts:ping",
+    "handler": "ts:pong",
+    "target": "tsres/client/main.ts",
+    "event": "ts:pong",
+    "net": true,
+    "from": [
+      "server"
+    ],
+    "to": [
+      "client"
+    ]
+  },
+  {
+    "source": "v8client/client/main.js",
+    "line": 4,
+    "emitter": "v8cmd",
+    "handler": "v8:ready",
+    "target": "v8client/client/main.js",
+    "event": "v8:ready",
+    "net": false,
+    "from": [
+      "client"
+    ],
+    "to": [
+      "client"
+    ]
+  }
+]

@@ -49,6 +49,7 @@ class SymbolRecord:
     signature: str
     docstring: str | None
     content_hash: str
+    registrar: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

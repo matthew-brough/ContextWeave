@@ -90,6 +90,7 @@ class _RawDef:
     kind: str
     node: Node
     names: list[Node]
+    registrar: Node | None = None
 
 
 type _RawDefs = dict[tuple[int, int], _RawDef]
@@ -206,7 +207,8 @@ def _collect_definition(def_key: str, captures: Captures, raw: _RawDefs) -> None
         or rank > KIND_RANK.get(previous.kind, 0)
         or (rank == KIND_RANK.get(previous.kind, 0) and len(names) > len(previous.names))
     ):
-        raw[key] = _RawDef(kind, node, names)
+        registrar = captures.get("handler.registrar") or []
+        raw[key] = _RawDef(kind, node, names, registrar[0] if registrar else None)
 
 
 def _outer(node: Node) -> Node:
@@ -283,6 +285,7 @@ def _nest(raw: _RawDefs, parsed: ParsedFile) -> list[Symbol]:
             signature=_signature(entry.node, parsed.source),
             docstring=_docstring(parsed, entry.node, outer),
             parent=parent.qualified_name if parent else None,
+            registrar=parsed.text(entry.registrar) if entry.registrar is not None else None,
         )
         symbols.append(symbol)
         stack.append(((start, end), symbol))

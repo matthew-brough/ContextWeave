@@ -110,3 +110,22 @@ def test_budget_truncates_with_omitted(graph: ToolContext, project: Path) -> Non
     result = run(graph, "related", target="leaf_one", rel="callers", max_tokens=300)
     assert result.structured["truncated"] is True
     assert items(result, "omitted") or result.structured.get("hint")
+
+
+EVENT_FILES = {
+    "fxmanifest.lua": "client_script 'client.lua'\nserver_script 'server.lua'\n",
+    "client.lua": 'function ask()\n    TriggerServerEvent("res:hello")\nend\n',
+    "server.lua": 'RegisterNetEvent("res:hello", function()\n    print("hi")\nend)\n',
+}
+
+
+def test_emitters_and_listeners_carry_event_resolution(project: Path, context: ToolContext) -> None:
+    for relative, text in EVENT_FILES.items():
+        (project / relative).write_text(text, encoding="utf-8")
+    reindex(project)
+    emitters = run(context, "related", target="res:hello", rel="emitters")
+    (edge,) = items(emitters, "edges")
+    assert edge["name"] == "ask" and edge["resolution"] == "event"
+    listeners = run(context, "related", target="ask", rel="listeners")
+    (heard,) = items(listeners, "edges")
+    assert heard["name"] == "res:hello" and heard["resolution"] == "event"

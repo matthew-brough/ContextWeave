@@ -14,3 +14,13 @@
     method: (identifier) @ref.name)) @ref.call
 
 (string content: (string_content) @ref.name) @ref.string
+
+(function_call
+  name: (identifier) @ref.qualifier
+  arguments: (arguments . (string content: (string_content) @ref.name))) @ref.emit
+(function_call
+  name: (identifier) @ref.qualifier
+  arguments: (arguments
+    . (_) @ref.first
+    . (string content: (string_content) @ref.name))
+  (#not-match? @ref.first "^[\"']")) @ref.emit

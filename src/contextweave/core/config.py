@@ -174,6 +174,10 @@ class EventsConfig:
         "AddEventHandler",
         "RegisterServerEvent",
         "EventHandlers",
+        "on",
+        "onNet",
+        "addEventListener",
+        "addNetEventListener",
     )
     emitters: tuple[str, ...] = (
         "TriggerEvent",
@@ -181,6 +185,8 @@ class EventsConfig:
         "TriggerClientEvent",
         "TriggerLatentServerEvent",
         "TriggerLatentClientEvent",
+        "emit",
+        "emitNet",
     )
 
 

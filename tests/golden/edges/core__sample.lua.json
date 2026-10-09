@@ -10,6 +10,15 @@
       "line": 19
     },
     {
+      "kind": "emit",
+      "name": "vrp",
+      "qualifier": "module",
+      "is_self": false,
+      "start_byte": 208,
+      "end_byte": 234,
+      "line": 19
+    },
+    {
       "kind": "string",
       "name": "lib/Proxy",
       "qualifier": null,
@@ -28,9 +37,27 @@
       "line": 21
     },
     {
+      "kind": "emit",
+      "name": "sample:ping",
+      "qualifier": "RegisterNetEvent",
+      "is_self": false,
+      "start_byte": 236,
+      "end_byte": 307,
+      "line": 21
+    },
+    {
       "kind": "call",
       "name": "RegisterNetEvent",
       "qualifier": null,
+      "is_self": false,
+      "start_byte": 382,
+      "end_byte": 447,
+      "line": 26
+    },
+    {
+      "kind": "emit",
+      "name": "sample:ping",
+      "qualifier": "RegisterNetEvent",
       "is_self": false,
       "start_byte": 382,
       "end_byte": 447,
@@ -49,6 +76,15 @@
       "kind": "call",
       "name": "exports",
       "qualifier": null,
+      "is_self": false,
+      "start_byte": 449,
+      "end_byte": 500,
+      "line": 30
+    },
+    {
+      "kind": "emit",
+      "name": "getWidget",
+      "qualifier": "exports",
       "is_self": false,
       "start_byte": 449,
       "end_byte": 500,

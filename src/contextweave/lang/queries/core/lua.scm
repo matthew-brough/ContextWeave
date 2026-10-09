@@ -16,7 +16,7 @@
 ; A concatenated name (`"WDS:HB:"..GetCurrentResourceName()`) is dynamic and is
 ; deliberately not matched: half a literal would be a fake symbol (§V.13).
 (function_call
-  name: (identifier)
+  name: (identifier) @handler.registrar
   arguments: (arguments
     . (string content: (string_content) @name)
     (function_definition))) @def.handler

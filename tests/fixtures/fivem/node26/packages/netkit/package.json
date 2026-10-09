@@ -1,0 +1,5 @@
+{
+  "name": "@n26/netkit",
+  "type": "module",
+  "exports": { ".": { "import": "./src/index.js", "require": "./src/index.cjs" }, "./extra": "./src/extra.js" }
+}

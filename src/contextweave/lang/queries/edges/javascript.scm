@@ -20,3 +20,13 @@
     property: (property_identifier) @ref.name)) @ref.inherit
 
 (string (string_fragment) @ref.name) @ref.string
+
+(call_expression
+  function: (identifier) @ref.qualifier
+  arguments: (arguments . (string . (string_fragment) @ref.name .))) @ref.emit
+(call_expression
+  function: (identifier) @ref.qualifier
+  arguments: (arguments
+    . (_) @ref.first
+    . (string . (string_fragment) @ref.name .))
+  (#not-match? @ref.first "^[\"'`]")) @ref.emit

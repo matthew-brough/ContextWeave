@@ -55,6 +55,15 @@
       "line": 17
     },
     {
+      "kind": "emit",
+      "name": "netCommand",
+      "qualifier": "RegisterCommand",
+      "is_self": false,
+      "start_byte": 548,
+      "end_byte": 641,
+      "line": 17
+    },
+    {
       "kind": "call",
       "name": "Action",
       "qualifier": null,
@@ -67,6 +76,15 @@
       "kind": "call",
       "name": "Query",
       "qualifier": null,
+      "is_self": false,
+      "start_byte": 651,
+      "end_byte": 709,
+      "line": 18
+    },
+    {
+      "kind": "emit",
+      "name": "SELECT 2",
+      "qualifier": "Query",
       "is_self": false,
       "start_byte": 651,
       "end_byte": 709,

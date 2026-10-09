@@ -64,6 +64,15 @@
       "line": 26
     },
     {
+      "kind": "emit",
+      "name": "heal",
+      "qualifier": "RegisterCommand",
+      "is_self": false,
+      "start_byte": 812,
+      "end_byte": 963,
+      "line": 26
+    },
+    {
       "kind": "call",
       "name": "Action",
       "qualifier": null,
@@ -76,6 +85,15 @@
       "kind": "call",
       "name": "Query",
       "qualifier": null,
+      "is_self": false,
+      "start_byte": 977,
+      "end_byte": 1035,
+      "line": 30
+    },
+    {
+      "kind": "emit",
+      "name": "SELECT 1",
+      "qualifier": "Query",
       "is_self": false,
       "start_byte": 977,
       "end_byte": 1035,

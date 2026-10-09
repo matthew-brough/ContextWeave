@@ -4,7 +4,7 @@ import os
 import sqlite3
 import sys
 import time
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Collection, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from importlib.resources import files as package_files
@@ -143,6 +143,7 @@ def build_file_data(
                     item.signature,
                     item.docstring,
                     hash_bytes(source[item.start_byte : item.end_byte]),
+                    item.registrar,
                 )
                 for item in found.symbols
             ]
@@ -303,13 +304,21 @@ class Store:
         return bool(built) and _int(built[0][0]) == (_int(current[0][0]) if current else 0)
 
     def replace_edges(
-        self, targets: Mapping[int, Sequence[int]], edges: Sequence[EdgeRecord]
+        self,
+        targets: Mapping[int, Sequence[int]],
+        edges: Sequence[EdgeRecord],
+        sides: Mapping[int, Collection[str]] | None = None,
     ) -> None:
-        """Replace import targets and every derived edge in one transaction."""
+        """Replace import targets, FiveM file sides and every derived edge in one transaction."""
         self._require_writable()
         with self._transaction():
             self._connection.execute("DELETE FROM import_targets")
             self._connection.execute("DELETE FROM symbol_edges")
+            self._connection.execute("DELETE FROM file_sides")
+            self._connection.executemany(
+                "INSERT OR IGNORE INTO file_sides (file_id, side) VALUES (?, ?)",
+                [(file_id, side) for file_id, found in (sides or {}).items() for side in found],
+            )
             self._connection.executemany(
                 "INSERT OR IGNORE INTO import_targets (import_id, file_id) VALUES (?, ?)",
                 [(import_id, file_id) for import_id, files in targets.items() for file_id in files],
@@ -607,6 +616,15 @@ class Store:
                     s.content_hash,
                 )
                 for s in data.symbols
+            ],
+        )
+        self._connection.executemany(
+            "INSERT INTO handler_meta (symbol_id, registrar) SELECT id, ? FROM symbols"
+            " WHERE file_id = ? AND qualified_name = ? AND start_byte = ? AND end_byte = ?",
+            [
+                (s.registrar, file_id, s.qualified_name, s.start_byte, s.end_byte)
+                for s in data.symbols
+                if s.registrar is not None
             ],
         )
         self._connection.executemany(

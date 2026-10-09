@@ -9,14 +9,17 @@ from contextweave.lang.parse import ParsedFile
 from contextweave.lang.registry import edge_query_text, load_language
 from contextweave.lang.ts import Captures, compile_query, run_matches
 
-REF_KINDS = ("call", "inherit", "implement", "base", "string", "relative")
+REF_KINDS = ("call", "inherit", "implement", "base", "string", "relative", "emit")
 
 PATH_LIKE = re.compile(r"^(?=\S*[A-Za-z])\S{3,200}$")
 
 
 @dataclass(frozen=True, slots=True)
 class RawRef:
-    """One unresolved reference captured from source; bytes cover the whole reference node."""
+    """One unresolved reference captured from source; bytes cover the whole reference node.
+
+    An emit reference carries the event name in name and the callee in qualifier.
+    """
 
     kind: str
     name: str
@@ -63,6 +66,7 @@ def extract_edges(parsed: ParsedFile) -> EdgeExtraction:
         )
     refs: dict[tuple[str, int, int, int], RawRef] = {}
     scopes: dict[str, None] = {}
+    emit_starts: dict[tuple[str, int, int, int], int] = {}
     for captures in matches:
         for namespace in captures.get("scope.namespace", []):
             scopes[parsed.text(namespace)] = None
@@ -70,6 +74,13 @@ def extract_edges(parsed: ParsedFile) -> EdgeExtraction:
         if ref is None:
             continue
         key = (ref.kind, ref.start_byte, ref.end_byte, _name_start(captures))
+        if ref.kind == "emit":
+            key = (ref.kind, ref.start_byte, ref.end_byte, -1)
+            if _name_start(captures) >= emit_starts.get(key, _name_start(captures) + 1):
+                continue
+            emit_starts[key] = _name_start(captures)
+            refs[key] = ref
+            continue
         previous = refs.get(key)
         if previous is None or (ref.is_self and not previous.is_self):
             refs[key] = ref

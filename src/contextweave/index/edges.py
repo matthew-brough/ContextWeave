@@ -5,8 +5,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
+from contextweave.core.config import EventsConfig
 from contextweave.core.registry import Registry
 from contextweave.core.types import JSON
+from contextweave.index.events import emits_pass, load_sides
 from contextweave.index.records import EdgeRecord, Resolution
 from contextweave.index.resolvers import RESOLVERS, ImportSite, ResolveContext
 from contextweave.index.store import Store
@@ -77,6 +79,9 @@ class Facts:
     imports: list[ImportSite]
     schema: list[SchemaKey]
     test_globs: tuple[str, ...]
+    events: EventsConfig = field(default_factory=EventsConfig)
+    handlers: dict[int, str] = field(default_factory=dict[int, str])
+    sides: dict[int, frozenset[str]] = field(default_factory=dict[int, frozenset[str]])
     targets: dict[int, tuple[int, ...]] = field(default_factory=dict[int, tuple[int, ...]])
     scopes: dict[int, Scope] = field(default_factory=dict[int, Scope])
     base_map: dict[int, list[Sym]] = field(default_factory=dict[int, list[Sym]])
@@ -133,24 +138,32 @@ class EdgeReport:
     unresolved_imports: int
 
 
-def resolve_edges(store: Store, test_globs: tuple[str, ...], *, force: bool = False) -> EdgeReport:
+def resolve_edges(
+    store: Store,
+    test_globs: tuple[str, ...],
+    *,
+    force: bool = False,
+    events: EventsConfig | None = None,
+) -> EdgeReport:
     """Rebuild import targets and every derived edge from the stored rows (V3: may lag writes)."""
     with store.writer_lock():
         if store.edges_current and not force:
             count = store.query("SELECT COUNT(*) FROM symbol_edges")
             return EdgeReport(int(str(count[0][0])), 0)
-        facts = load_facts(store, test_globs)
+        facts = load_facts(store, test_globs, events or EventsConfig())
         facts.targets = resolve_imports(facts)
         produced: list[EdgeRecord] = []
         for _name, edge_pass in EDGE_PASSES.items():
             produced.extend(edge_pass(facts, tuple(produced)))
         edges = dedupe(produced)
-        store.replace_edges(facts.targets, edges)
+        store.replace_edges(facts.targets, edges, facts.sides)
         unresolved = sum(1 for site in facts.imports if not facts.targets.get(site.id))
         return EdgeReport(len(edges), unresolved)
 
 
-def load_facts(store: Store, test_globs: tuple[str, ...]) -> Facts:
+def load_facts(
+    store: Store, test_globs: tuple[str, ...], events: EventsConfig | None = None
+) -> Facts:
     """Read every row the edge passes need."""
     paths: dict[int, str] = {}
     langs: dict[int, str | None] = {}
@@ -227,8 +240,24 @@ def load_facts(store: Store, test_globs: tuple[str, ...]) -> Facts:
         SchemaKey(int(str(row[0])), int(str(row[1])), str(row[2]))
         for row in store.query("SELECT id, file_id, key_path FROM schema_nodes ORDER BY id")
     ]
+    handlers = {
+        int(str(row[0])): str(row[1])
+        for row in store.query("SELECT symbol_id, registrar FROM handler_meta")
+    }
     return Facts(
-        context, langs, profiles, symbols, by_name, by_file, refs, imports, schema, test_globs
+        context,
+        langs,
+        profiles,
+        symbols,
+        by_name,
+        by_file,
+        refs,
+        imports,
+        schema,
+        test_globs,
+        events or EventsConfig(),
+        handlers,
+        load_sides(context),
     )
 
 
@@ -556,3 +585,4 @@ EDGE_PASSES.register("imports", _imports_pass)
 EDGE_PASSES.register("refs", _refs_pass)
 EDGE_PASSES.register("tests", _tests_pass)
 EDGE_PASSES.register("config", _config_pass)
+EDGE_PASSES.register("emits", emits_pass)
