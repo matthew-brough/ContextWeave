@@ -31,6 +31,7 @@ dev = [
 
 [tool.pyright]
 include = ["src", "tests"]
+exclude = ["tests/fixtures"]
 stubPath = "typings"
 typeCheckingMode = "strict"
 pythonVersion = "3.14"
@@ -40,7 +41,7 @@ reportUnnecessaryTypeIgnoreComment = "error"
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-extend-exclude = ["docs"]
+extend-exclude = ["docs", "tests/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "ANN", "RUF", "SIM", "PTH", "PGH"]
