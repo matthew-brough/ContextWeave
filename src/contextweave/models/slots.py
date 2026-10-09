@@ -1,0 +1,263 @@
+import time
+from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+
+import httpx
+
+from contextweave.core.config import ModelsConfig
+from contextweave.core.errors import DegradedEntry
+from contextweave.core.registry import UnknownKeyError
+from contextweave.core.types import JSON
+from contextweave.models.decision import (
+    DecisionClient,
+    NullDecisionClient,
+    ensure_decision_client,
+)
+from contextweave.models.errors import (
+    ModelDeadlineError,
+    ModelDisabledError,
+    ModelError,
+    ModelParseError,
+    ProviderSlotError,
+)
+from contextweave.models.health import Clock, HealthStatus, SlotHealth, Submit
+from contextweave.models.null import NONE_CHAIN, build_null_annotate, build_null_embed
+from contextweave.models.ollama import build_ollama_annotate, build_ollama_embed
+from contextweave.models.openai_compat import build_openai_annotate, build_openai_embed
+from contextweave.models.providers import (
+    AnnotateClient,
+    BuildContext,
+    Device,
+    EmbedClient,
+    EmbedKind,
+    Endpoints,
+    Message,
+    ProviderRegistries,
+    Slot,
+)
+from contextweave.models.residency import (
+    ClassifyBackend,
+    Probe,
+    ProcessLauncher,
+    Profile,
+    Residency,
+    SubprocessLauncher,
+    http_probe,
+)
+
+NONE = "none"
+
+
+@dataclass(frozen=True, slots=True)
+class Done[T]:
+    value: T
+
+
+@dataclass(frozen=True, slots=True)
+class Skipped:
+    degraded: DegradedEntry
+
+
+type Outcome[T] = Done[T] | Skipped
+
+
+def default_registries() -> ProviderRegistries:
+    """Registries with the built-in providers (kev/clef arrive with T20)."""
+    registries = ProviderRegistries()
+    registries.embed.register("ollama", build_ollama_embed)
+    registries.embed.register("openai_compat", build_openai_embed)
+    registries.embed.register(NONE, build_null_embed)
+    registries.annotate.register("ollama", build_ollama_annotate)
+    registries.annotate.register("openai_compat", build_openai_annotate)
+    registries.annotate.register(NONE, build_null_annotate)
+    registries.classify.register(NONE, lambda ctx: NullDecisionClient())
+    return registries
+
+
+def thread_submit() -> Submit:
+    """Submit jobs to a single background worker thread."""
+    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cw-warm")
+
+    def submit(job: Callable[[], None]) -> None:
+        pool.submit(job)
+
+    return submit
+
+
+@dataclass(frozen=True, slots=True)
+class SlotClients:
+    embed: EmbedClient
+    annotate: AnnotateClient
+    decision: DecisionClient
+
+
+@dataclass(slots=True)
+class ModelSlots:
+    """Facade over the three slots: applies health and deadline, never raises to the pipeline."""
+
+    clients: SlotClients
+    healths: Mapping[Slot, SlotHealth]
+    residency: Residency
+    deadline_s: float
+    clock: Clock
+    issues: tuple[str, ...] = field(default=())
+
+    @classmethod
+    def from_config(
+        cls,
+        models: ModelsConfig,
+        *,
+        registries: ProviderRegistries | None = None,
+        endpoints: Endpoints | None = None,
+        transport: httpx.BaseTransport | None = None,
+        clock: Clock = time.monotonic,
+        submit: Submit | None = None,
+        launcher: ProcessLauncher | None = None,
+        probe: Probe | None = None,
+    ) -> ModelSlots:
+        """Build clients, health state and residency from config."""
+        available = registries or default_registries()
+        ctx = BuildContext(models, endpoints or Endpoints(), transport)
+        issues: list[str] = []
+        embed = _build(available.embed.get, models.embed.provider, Slot.EMBED, ctx, issues)
+        annotate = _build(
+            available.annotate.get, models.annotate.provider, Slot.ANNOTATE, ctx, issues
+        )
+        decision = _build_decision(available, models.classify.provider, ctx, issues)
+        embed = embed or build_null_embed(ctx)
+        annotate = annotate or build_null_annotate(ctx)
+        classify_off = decision is None or isinstance(decision, NullDecisionClient)
+        decision = decision or NullDecisionClient()
+        backend = ClassifyBackend(
+            models.classify,
+            launcher or SubprocessLauncher(),
+            probe or http_probe(transport),
+            clock=clock,
+        )
+        chains: Mapping[Slot, tuple[Device, ...]] = {
+            Slot.EMBED: tuple(embed.devices),
+            Slot.ANNOTATE: tuple(annotate.devices),
+            Slot.CLASSIFY: NONE_CHAIN if classify_off else _classify_chain(models, issues),
+        }
+        warms: Mapping[Slot, Callable[[Device], None]] = {
+            Slot.EMBED: embed.set_device,
+            Slot.ANNOTATE: annotate.set_device,
+            Slot.CLASSIFY: backend.warm,
+        }
+        worker = submit or thread_submit()
+        healths = {
+            slot: SlotHealth(
+                slot,
+                chains[slot],
+                warm=warms[slot],
+                submit=worker,
+                clock=clock,
+                retry_after_s=models.retry_after_s,
+                skip_warn=models.skip_warn,
+                loaded=slot is not Slot.CLASSIFY or classify_off,
+            )
+            for slot in Slot
+        }
+        return cls(
+            SlotClients(embed, annotate, decision),
+            healths,
+            Residency(models, healths, backend),
+            models.deadline_ms / 1000,
+            clock,
+            tuple(issues),
+        )
+
+    def call[T](self, slot: Slot, fn: Callable[[], T], *, stage: str | None = None) -> Outcome[T]:
+        """Run one model call on the slot's active device; failures become a Skipped result."""
+        name = stage or slot.value
+        health = self.healths[slot]
+        device = health.acquire()
+        if device is None:
+            health.record_unavailable()
+            return Skipped(DegradedEntry(stage=name, reason=health.unavailable_reason()))
+        started = self.clock()
+        try:
+            value = fn()
+            if self.clock() - started > self.deadline_s:
+                raise ModelDeadlineError(f"call exceeded {self.deadline_s:.3f}s")
+        except ModelDisabledError as exc:
+            return Skipped(DegradedEntry(stage=name, reason=str(exc)))
+        except ModelParseError as exc:
+            health.record_success()
+            return Skipped(DegradedEntry(stage=name, reason=str(exc), device_tried=str(device)))
+        except ModelError as exc:
+            health.record_failure(device)
+            return Skipped(DegradedEntry(stage=name, reason=str(exc), device_tried=str(device)))
+        except Exception as exc:
+            health.record_failure(device)
+            reason = str(exc) or type(exc).__name__
+            return Skipped(DegradedEntry(stage=name, reason=reason, device_tried=str(device)))
+        health.record_success()
+        return Done(value)
+
+    def embed(
+        self, texts: Sequence[str], *, kind: EmbedKind, stage: str | None = None
+    ) -> Outcome[list[list[float]]]:
+        """Embed texts through the embed slot."""
+        return self.call(
+            Slot.EMBED, lambda: self.clients.embed.embed(texts, kind=kind), stage=stage
+        )
+
+    def annotate(
+        self,
+        prompt_messages: Sequence[Message],
+        json_schema: Mapping[str, JSON],
+        *,
+        stage: str | None = None,
+    ) -> Outcome[Mapping[str, JSON]]:
+        """Annotate through the annotate slot."""
+        return self.call(
+            Slot.ANNOTATE,
+            lambda: self.clients.annotate.annotate(prompt_messages, json_schema),
+            stage=stage,
+        )
+
+    def apply_profile(self, profile: Profile) -> None:
+        """Switch residency profile."""
+        self.residency.apply(profile)
+
+    def status(self) -> tuple[HealthStatus, ...]:
+        """Per-slot health snapshots."""
+        return tuple(health.status() for health in self.healths.values())
+
+
+def _build[C](
+    lookup: Callable[[str], Callable[[BuildContext], C]],
+    name: str,
+    slot: Slot,
+    ctx: BuildContext,
+    issues: list[str],
+) -> C | None:
+    try:
+        return lookup(name)(ctx)
+    except UnknownKeyError:
+        issues.append(f"{slot} provider '{name}' is not available; slot disabled")
+    return None
+
+
+def _build_decision(
+    registries: ProviderRegistries, name: str, ctx: BuildContext, issues: list[str]
+) -> DecisionClient | None:
+    try:
+        return ensure_decision_client(registries.classify.get(name)(ctx))
+    except UnknownKeyError:
+        issues.append(f"classify provider '{name}' is not a decision provider; slot disabled")
+    except ProviderSlotError as exc:
+        issues.append(f"classify provider '{name}' rejected: {exc}")
+    return None
+
+
+def _classify_chain(models: ModelsConfig, issues: list[str]) -> tuple[Device, ...]:
+    chain: list[Device] = []
+    for name in models.classify.devices:
+        try:
+            chain.append(Device(name))
+        except ValueError:
+            issues.append(f"classify device '{name}' unknown; ignored")
+    return tuple(chain)

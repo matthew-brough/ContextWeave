@@ -5,6 +5,7 @@ description = "Unified code-context MCP server: structural, lexical and semantic
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "httpx>=0.28.1",
     "mcp>=2.3.0",
     "msgpack>=1.2.3",
     "sqlite-vec>=0.1.9",

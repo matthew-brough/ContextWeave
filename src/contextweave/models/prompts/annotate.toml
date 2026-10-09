@@ -1,0 +1,32 @@
+prompt_version = 1
+
+[[messages]]
+role = "system"
+content = """You annotate source code chunks for a code search index. \
+Reply with JSON only. "purpose": one sentence of at most 25 words saying what the chunk does. \
+"tags": at most 5 lowercase keywords describing its domain or role."""
+
+[[messages]]
+role = "user"
+content = """File: $path
+Kind: $kind
+Name: $name
+
+$code"""
+
+[schema]
+type = "object"
+required = ["purpose", "tags"]
+additionalProperties = false
+
+[schema.properties.purpose]
+type = "string"
+maxLength = 200
+
+[schema.properties.tags]
+type = "array"
+maxItems = 5
+
+[schema.properties.tags.items]
+type = "string"
+pattern = "^[a-z0-9][a-z0-9_-]*$"
