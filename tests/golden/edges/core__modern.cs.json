@@ -1,0 +1,44 @@
+{
+  "refs": [
+    {
+      "kind": "base",
+      "name": "BaseScript",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 486,
+      "end_byte": 498,
+      "line": 17
+    },
+    {
+      "kind": "call",
+      "name": "Info",
+      "qualifier": "logger",
+      "is_self": false,
+      "start_byte": 586,
+      "end_byte": 606,
+      "line": 21
+    },
+    {
+      "kind": "call",
+      "name": "ToString",
+      "qualifier": "index",
+      "is_self": false,
+      "start_byte": 721,
+      "end_byte": 737,
+      "line": 25
+    },
+    {
+      "kind": "call",
+      "name": "ToUpper",
+      "qualifier": "s",
+      "is_self": false,
+      "start_byte": 959,
+      "end_byte": 970,
+      "line": 37
+    }
+  ],
+  "scopes": [
+    "Sample.Server"
+  ],
+  "errors": []
+}

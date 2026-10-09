@@ -219,3 +219,41 @@ def json_schema[T](tp: type[T], *, mode: Literal["validation", "serialization"])
     if not isinstance(stripped, dict):
         raise TypeError("schema root is not an object")
     return stripped
+
+
+type Rel = Literal[
+    "callers",
+    "callees",
+    "imports",
+    "importers",
+    "inherits",
+    "implements",
+    "tests",
+    "config",
+    "emitters",
+    "listeners",
+]
+
+
+class RelatedArgs(BaseArgs):
+    target: Annotated[str, Field(min_length=1, description="cw:// ref, qualified name or path")]
+    rel: Rel
+    depth: NotRequired[Annotated[int, Field(ge=1, le=4, description="Hops to follow")]]
+    include_name_edges: NotRequired[bool]
+
+
+class RelatedEdge(TypedDict):
+    rel: str
+    resolution: str
+    hops: int
+    name: str
+    ref: NotRequired[str]
+    path: NotRequired[str]
+
+
+class RelatedPayload(Common):
+    target: str
+    found: bool
+    ambiguous: bool
+    edges: list[RelatedEdge]
+    candidates: NotRequired[list[Candidate]]

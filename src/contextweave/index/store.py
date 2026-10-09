@@ -4,7 +4,7 @@ import os
 import sqlite3
 import sys
 import time
-from collections.abc import Generator, Sequence
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from importlib.resources import files as package_files
@@ -20,6 +20,7 @@ from contextweave.index.records import (
     Changed,
     Chunk,
     DocNodeRecord,
+    EdgeRecord,
     FileData,
     FileProfile,
     FileRecord,
@@ -36,16 +37,19 @@ from contextweave.index.root import ensure_self_ignore, state_dir
 from contextweave.index.vec_load import load_vec
 from contextweave.index.walk import BINARY_SNIFF_BYTES
 from contextweave.lang.extract_doc import extract_doc
+from contextweave.lang.extract_edges import extract_edges
 from contextweave.lang.extract_schema import extract_schema
 from contextweave.lang.extract_symbols import extract_symbols
 from contextweave.lang.model import Import, LangError
 from contextweave.lang.parse import ParseResult, parse_bytes
 from contextweave.lang.registry import GROUPS, PROFILES, Group, spec_for_path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 DB_NAME = "index.db"
 LOCK_NAME = "index.lock"
 GENERATION_KEY = "generation"
+STRUCTURE_KEY = "structure"
+EDGES_KEY = "edges_structure"
 LOCK_POLL_S = 0.05
 
 type SqlValue = str | int | float | bytes | None
@@ -291,6 +295,51 @@ class Store:
         rows = self._query("SELECT value FROM meta WHERE key = ?", (GENERATION_KEY,))
         return _int(rows[0][0]) if rows else 0
 
+    @property
+    def edges_current(self) -> bool:
+        """True when the derived edges were built after the last file upsert or delete."""
+        built = self._query("SELECT value FROM meta WHERE key = ?", (EDGES_KEY,))
+        current = self._query("SELECT value FROM meta WHERE key = ?", (STRUCTURE_KEY,))
+        return bool(built) and _int(built[0][0]) == (_int(current[0][0]) if current else 0)
+
+    def replace_edges(
+        self, targets: Mapping[int, Sequence[int]], edges: Sequence[EdgeRecord]
+    ) -> None:
+        """Replace import targets and every derived edge in one transaction."""
+        self._require_writable()
+        with self._transaction():
+            self._connection.execute("DELETE FROM import_targets")
+            self._connection.execute("DELETE FROM symbol_edges")
+            self._connection.executemany(
+                "INSERT OR IGNORE INTO import_targets (import_id, file_id) VALUES (?, ?)",
+                [(import_id, file_id) for import_id, files in targets.items() for file_id in files],
+            )
+            self._connection.executemany(
+                "INSERT INTO symbol_edges (from_id, from_file_id, to_id, to_file_id, to_node_id,"
+                " to_name, rel, resolution, line, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        e.from_id,
+                        e.from_file_id,
+                        e.to_id,
+                        e.to_file_id,
+                        e.to_node_id,
+                        e.to_name,
+                        e.rel,
+                        e.resolution,
+                        e.line,
+                        e.detail,
+                    )
+                    for e in edges
+                ],
+            )
+            self._bump_generation()
+            self._connection.execute(
+                "INSERT INTO meta (key, value) VALUES (?, (SELECT COALESCE(MAX(value), 0) FROM meta WHERE key = ?))"
+                " ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                (EDGES_KEY, STRUCTURE_KEY),
+            )
+
     @contextmanager
     def writer_lock(self, timeout_s: float = 10.0) -> Generator[None]:
         """Advisory single-writer lock (V21); reentrant, no-op off POSIX."""
@@ -347,8 +396,10 @@ class Store:
                 )
                 file_id = _int(cursor.lastrowid)
             self._insert_children(file_id, data)
+            self._write_refs(file_id, path, parse_result)
             self._write_chunks(file_id, path, parse_result, source)
             self._bump_generation()
+            self._bump_structure()
         stored = self.get_data(path)
         if stored is None:
             raise RuntimeError(f"upsert of {path} left no row")
@@ -375,6 +426,7 @@ class Store:
             self._clear_children(file_id)
             self._connection.execute("DELETE FROM files WHERE id = ?", (file_id,))
             self._bump_generation()
+            self._bump_structure()
         return True
 
     def get_file(self, path: str) -> FileRecord | None:
@@ -511,12 +563,27 @@ class Store:
             (GENERATION_KEY,),
         )
 
+    def _bump_structure(self) -> None:
+        self._connection.execute(
+            "INSERT INTO meta (key, value) VALUES (?, 1)"
+            " ON CONFLICT (key) DO UPDATE SET value = value + 1",
+            (STRUCTURE_KEY,),
+        )
+
     def _clear_children(self, file_id: int) -> None:
         self._connection.execute(
             "DELETE FROM fts_code WHERE rowid IN (SELECT id FROM chunks WHERE file_id = ?)",
             (file_id,),
         )
-        for table in ("chunks", "symbols", "imports", "schema_nodes", "doc_nodes", "file_scopes"):
+        for table in (
+            "chunks",
+            "symbols",
+            "symbol_refs",
+            "imports",
+            "schema_nodes",
+            "doc_nodes",
+            "file_scopes",
+        ):
             self._connection.execute(f"DELETE FROM {table} WHERE file_id = ?", (file_id,))
 
     def _insert_children(self, file_id: int, data: FileData) -> None:
@@ -592,6 +659,37 @@ class Store:
                 )
                 for d in data.doc_nodes
             ],
+        )
+
+    def _write_refs(self, file_id: int, path: str, parse_result: ParseResult) -> None:
+        parsed = parse_result.parsed
+        if parsed is None or parsed.spec.profile != "symbols":
+            return
+        found = extract_edges(parsed)
+        spans = sorted(
+            ((s.start_byte, s.end_byte, s.id) for s in self.symbols_in_file(path)),
+            key=lambda span: (span[1] - span[0], span[0]),
+        )
+        self._connection.executemany(
+            "INSERT INTO symbol_refs (file_id, from_id, kind, name, qualifier, is_self, line,"
+            " start_byte) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    file_id,
+                    _enclosing(spans, ref.start_byte, ref.end_byte),
+                    ref.kind,
+                    ref.name,
+                    ref.qualifier,
+                    int(ref.is_self),
+                    ref.line,
+                    ref.start_byte,
+                )
+                for ref in found.refs
+            ],
+        )
+        self._connection.executemany(
+            "INSERT OR IGNORE INTO file_scopes (file_id, scope) VALUES (?, ?)",
+            [(file_id, scope) for scope in found.scopes],
         )
 
     def _write_chunks(
@@ -751,6 +849,10 @@ def _prepare(connection: sqlite3.Connection, path: Path) -> None:
 def _apply_schema(connection: sqlite3.Connection) -> None:
     schema = package_files("contextweave.index").joinpath("schema.sql").read_text(encoding="utf-8")
     connection.executescript(f"BEGIN;\n{schema}\nPRAGMA user_version = {SCHEMA_VERSION};\nCOMMIT;")
+
+
+def _enclosing(spans: Sequence[tuple[int, int, int]], start: int, end: int) -> int | None:
+    return next((sid for low, high, sid in spans if low <= start and end <= high), None)
 
 
 def _import_record(path: str, item: Import) -> ImportRecord:

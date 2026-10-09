@@ -12,6 +12,7 @@ from contextweave.core.project import ProjectEcho, ResolvedProject, resolve_proj
 from contextweave.core.refs import ByteAnchor, PartAnchor, Ref, RefError, SymbolAnchor, parse_ref
 from contextweave.core.registry import Registry
 from contextweave.core.types import JSON
+from contextweave.feedback.served import record_served_pack
 from contextweave.lang.parse import parse_bytes
 from contextweave.lang.registry import Group, load_language
 from contextweave.lang.ts import run_matches
@@ -42,6 +43,8 @@ from contextweave.server.payloads import (
     ImportItem,
     Match,
     OutlineNode,
+    RelatedArgs,
+    RelatedPayload,
     SearchSymbolsArgs,
     SearchSymbolsPayload,
     SymbolItem,
@@ -49,6 +52,7 @@ from contextweave.server.payloads import (
     json_schema,
 )
 from contextweave.server.queries import SearchRow
+from contextweave.server.related import empty_related, related_body, render_related
 from contextweave.server.render import (
     render_ast_query,
     render_context_search,
@@ -968,6 +972,7 @@ def _context_search(call: Call[ContextPack], args: ContextSearchArgs) -> Context
     result = search(call.snap.store, call.ctx.config, args["query"], options)
     if result.omitted:
         call.ctx.packs.put(call.project.key, result.pack["pack_id"], result.omitted)
+    record_served_pack(call.snap.store, result.pack)
     return result.pack
 
 
@@ -1063,5 +1068,17 @@ define(
         _expand,
         _empty_expand,
         _render_expand_ref,
+    )
+)
+define(
+    Tool(
+        "related",
+        "Related",
+        "Graph neighbours of a symbol or file: callers, callees, imports, inheritance, tests, config.",
+        RelatedArgs,
+        RelatedPayload,
+        related_body,
+        empty_related,
+        render_related,
     )
 )

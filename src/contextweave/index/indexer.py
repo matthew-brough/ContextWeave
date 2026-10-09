@@ -5,6 +5,7 @@ from pathlib import Path
 from contextweave.core.config import Config
 from contextweave.index.chunk_tokens import ChunkTokenizer, embed_tokenizer
 from contextweave.index.derived import DerivedCache
+from contextweave.index.edges import resolve_edges
 from contextweave.index.embed import EmbedReport, embed_project
 from contextweave.index.records import Changed
 from contextweave.index.store import Store
@@ -66,6 +67,7 @@ def index_project(
         removed = tuple(path for path in sorted(known) if path not in present)
         for path in removed:
             store.delete_file(path)
+        resolve_edges(store, config.index.test_globs)
         embedded = (
             embed_project(store, slots, cache, config, tokenizer=tokenizer)
             if slots is not None and cache is not None

@@ -1,0 +1,116 @@
+{
+  "refs": [
+    {
+      "kind": "base",
+      "name": "BaseScript",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 317,
+      "end_byte": 329,
+      "line": 13
+    },
+    {
+      "kind": "call",
+      "name": "Dictionary",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 395,
+      "end_byte": 424,
+      "line": 15
+    },
+    {
+      "kind": "call",
+      "name": "Action",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 603,
+      "end_byte": 644,
+      "line": 23
+    },
+    {
+      "kind": "call",
+      "name": "Action",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 695,
+      "end_byte": 731,
+      "line": 24
+    },
+    {
+      "kind": "call",
+      "name": "Add",
+      "qualifier": "Exports",
+      "is_self": false,
+      "start_byte": 745,
+      "end_byte": 798,
+      "line": 25
+    },
+    {
+      "kind": "call",
+      "name": "Func",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 770,
+      "end_byte": 797,
+      "line": 25
+    },
+    {
+      "kind": "call",
+      "name": "RegisterCommand",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 812,
+      "end_byte": 963,
+      "line": 26
+    },
+    {
+      "kind": "call",
+      "name": "Action",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 836,
+      "end_byte": 955,
+      "line": 26
+    },
+    {
+      "kind": "call",
+      "name": "Query",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 977,
+      "end_byte": 1035,
+      "line": 30
+    },
+    {
+      "kind": "call",
+      "name": "Action",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 1001,
+      "end_byte": 1034,
+      "line": 30
+    },
+    {
+      "kind": "call",
+      "name": "GetCurrentResourceName",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 1199,
+      "end_byte": 1223,
+      "line": 36
+    },
+    {
+      "kind": "call",
+      "name": "Delay",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 1338,
+      "end_byte": 1346,
+      "line": 42
+    }
+  ],
+  "scopes": [
+    "Sample.Client"
+  ],
+  "errors": []
+}

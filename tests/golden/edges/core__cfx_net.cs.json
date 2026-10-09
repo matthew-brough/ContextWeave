@@ -1,0 +1,89 @@
+{
+  "refs": [
+    {
+      "kind": "base",
+      "name": "BaseScript",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 121,
+      "end_byte": 133,
+      "line": 7
+    },
+    {
+      "kind": "call",
+      "name": "Action",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 332,
+      "end_byte": 365,
+      "line": 13
+    },
+    {
+      "kind": "call",
+      "name": "Action",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 405,
+      "end_byte": 432,
+      "line": 14
+    },
+    {
+      "kind": "call",
+      "name": "Add",
+      "qualifier": "Exports",
+      "is_self": false,
+      "start_byte": 490,
+      "end_byte": 538,
+      "line": 16
+    },
+    {
+      "kind": "call",
+      "name": "Func",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 515,
+      "end_byte": 537,
+      "line": 16
+    },
+    {
+      "kind": "call",
+      "name": "RegisterCommand",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 548,
+      "end_byte": 641,
+      "line": 17
+    },
+    {
+      "kind": "call",
+      "name": "Action",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 578,
+      "end_byte": 633,
+      "line": 17
+    },
+    {
+      "kind": "call",
+      "name": "Query",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 651,
+      "end_byte": 709,
+      "line": 18
+    },
+    {
+      "kind": "call",
+      "name": "Action",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 675,
+      "end_byte": 708,
+      "line": 18
+    }
+  ],
+  "scopes": [
+    "Sample.Net"
+  ],
+  "errors": []
+}

@@ -1,0 +1,15 @@
+{
+  "refs": [
+    {
+      "kind": "call",
+      "name": "require",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 41,
+      "end_byte": 58,
+      "line": 2
+    }
+  ],
+  "scopes": [],
+  "errors": []
+}

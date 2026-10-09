@@ -1,0 +1,15 @@
+{
+  "refs": [
+    {
+      "kind": "string",
+      "name": "./config",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 28,
+      "end_byte": 38,
+      "line": 1
+    }
+  ],
+  "scopes": [],
+  "errors": []
+}

@@ -134,9 +134,12 @@ def test_query_files_ship_as_package_data() -> None:
         if f.name.endswith(".scm")
     )
     expected = sorted(
-        f"{'core' if s.profile == 'symbols' else 'defs'}/{s.lang}.scm"
-        for s in LANGS
-        if s.profile in ("symbols", "defs")
+        [
+            f"{'core' if s.profile == 'symbols' else 'defs'}/{s.lang}.scm"
+            for s in LANGS
+            if s.profile in ("symbols", "defs")
+        ]
+        + [f"edges/{s.lang}.scm" for s in LANGS if s.profile == "symbols"]
     )
     assert shipped == expected
 

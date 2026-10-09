@@ -1,0 +1,96 @@
+{
+  "refs": [
+    {
+      "kind": "call",
+      "name": "module",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 208,
+      "end_byte": 234,
+      "line": 19
+    },
+    {
+      "kind": "string",
+      "name": "lib/Proxy",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 222,
+      "end_byte": 233,
+      "line": 19
+    },
+    {
+      "kind": "call",
+      "name": "RegisterNetEvent",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 236,
+      "end_byte": 307,
+      "line": 21
+    },
+    {
+      "kind": "call",
+      "name": "RegisterNetEvent",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 382,
+      "end_byte": 447,
+      "line": 26
+    },
+    {
+      "kind": "call",
+      "name": "helper",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 434,
+      "end_byte": 442,
+      "line": 27
+    },
+    {
+      "kind": "call",
+      "name": "exports",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 449,
+      "end_byte": 500,
+      "line": 30
+    },
+    {
+      "kind": "call",
+      "name": "query",
+      "qualifier": "MySQL",
+      "is_self": false,
+      "start_byte": 502,
+      "end_byte": 568,
+      "line": 34
+    },
+    {
+      "kind": "string",
+      "name": "sample/select",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 514,
+      "end_byte": 529,
+      "line": 34
+    },
+    {
+      "kind": "call",
+      "name": "RegisterNetEvent",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 570,
+      "end_byte": 638,
+      "line": 38
+    },
+    {
+      "kind": "call",
+      "name": "tostring",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 597,
+      "end_byte": 608,
+      "line": 38
+    }
+  ],
+  "scopes": [],
+  "errors": []
+}

@@ -36,6 +36,7 @@ def test_list_tools(context: ToolContext) -> None:
             "search_symbols",
             "ast_query",
             "expand",
+            "related",
         ]
         assert len(listed.tools) <= 10
         for tool in listed.tools:

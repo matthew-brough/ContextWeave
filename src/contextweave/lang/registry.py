@@ -111,3 +111,8 @@ def query_text(spec: LangSpec) -> str | None:
 def _read_query(directory: str, lang: str) -> str | None:
     resource = files("contextweave.lang").joinpath("queries", directory, f"{lang}.scm")
     return resource.read_text(encoding="utf-8") if resource.is_file() else None
+
+
+def edge_query_text(spec: LangSpec) -> str | None:
+    """Contents of the language's edge .scm file, None when the language has no edges."""
+    return _read_query("edges", spec.lang)

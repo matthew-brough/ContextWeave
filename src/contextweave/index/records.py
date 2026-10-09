@@ -5,6 +5,7 @@ from contextweave.lang.model import LangError
 from contextweave.lang.registry import Group, Profile
 
 type FileProfile = Profile | Literal["text"]
+type Resolution = Literal["exact", "import", "event", "name"]
 type BodyMode = Literal["bytes", "schema"]
 
 
@@ -165,3 +166,22 @@ class Chunk:
     qualified_names: tuple[str, ...]
     part: int | None
     text: str
+
+
+@dataclass(frozen=True, slots=True)
+class EdgeRecord:
+    """A derived relation; from_id is None when it starts at module level of from_file_id.
+
+    The target is a symbol, a whole file or a schema node; unresolved targets keep only to_name.
+    """
+
+    from_id: int | None
+    from_file_id: int
+    to_id: int | None
+    to_file_id: int | None
+    to_node_id: int | None
+    to_name: str
+    rel: str
+    resolution: Resolution
+    line: int
+    detail: str | None = None

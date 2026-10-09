@@ -4,7 +4,9 @@ from typing import Literal, NotRequired, TypedDict
 from contextweave.core.errors import DegradedEntry, ErrorEntry, OmittedEntry, OverflowEntry
 from contextweave.retrieve.candidates import Candidate
 
-type Rep = Literal["source", "signature"]
+type Rep = Literal["source", "signature", "collapsed"]
+
+LOSSLESS_REPS: frozenset[Rep] = frozenset({"source", "collapsed"})
 
 
 class RrfWire(TypedDict):
@@ -132,7 +134,10 @@ class PackItem:
                 graph_proximity=scores.graph_proximity,
                 redundancy=scores.redundancy,
             ),
-            edges=[],
+            edges=[
+                EdgeWire(rel=edge.rel, to_ref=edge.to_ref, resolution=edge.resolution)
+                for edge in cand.edges
+            ],
             freshness="fresh",
             synthesized=False,
             oversize=self.oversize,

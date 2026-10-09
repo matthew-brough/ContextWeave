@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from contextweave.compact.stage import CompactStage
 from contextweave.core.config import Config
 from contextweave.core.errors import OmittedEntry
 from contextweave.core.refs import project_key
@@ -8,6 +9,7 @@ from contextweave.retrieve.assemble import AssembleStage
 from contextweave.retrieve.candidates import CandidateSet
 from contextweave.retrieve.context import Mode, QueryContext
 from contextweave.retrieve.dedupe import DedupeStage
+from contextweave.retrieve.expand import ExpandStage
 from contextweave.retrieve.fuse import FuseStage
 from contextweave.retrieve.pack import ContextPack, PackResult
 from contextweave.retrieve.pack_text import TextRender, render_pack_text
@@ -43,7 +45,9 @@ def full_registry(assembler: AssembleStage) -> StageRegistry:
     registry.register(PlanStage())
     registry.register(FuseStage())
     registry.register(FallbackScoreStage())
+    registry.register(ExpandStage())
     registry.register(DedupeStage())
+    registry.register(CompactStage())
     registry.register(assembler)
     return registry
 

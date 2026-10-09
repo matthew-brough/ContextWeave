@@ -35,6 +35,15 @@ class Scores:
 
 
 @dataclass(frozen=True, slots=True)
+class CandidateEdge:
+    """A relation from a candidate to another served chunk, labelled by how it was resolved."""
+
+    rel: str
+    to_ref: str
+    resolution: str
+
+
+@dataclass(frozen=True, slots=True)
 class Candidate:
     """One chunk moving through the pipeline."""
 
@@ -52,6 +61,7 @@ class Candidate:
     fused: float = 0.0
     critical: bool = False
     why: str = ""
+    edges: tuple[CandidateEdge, ...] = ()
 
     @property
     def order_key(self) -> tuple[str, int, int]:

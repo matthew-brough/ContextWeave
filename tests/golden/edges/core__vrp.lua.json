@@ -1,0 +1,177 @@
+{
+  "refs": [
+    {
+      "kind": "call",
+      "name": "module",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 14,
+      "end_byte": 40,
+      "line": 1
+    },
+    {
+      "kind": "string",
+      "name": "lib/Proxy",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 28,
+      "end_byte": 39,
+      "line": 1
+    },
+    {
+      "kind": "call",
+      "name": "module",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 56,
+      "end_byte": 83,
+      "line": 2
+    },
+    {
+      "kind": "string",
+      "name": "lib/Tunnel",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 70,
+      "end_byte": 82,
+      "line": 2
+    },
+    {
+      "kind": "call",
+      "name": "require",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 97,
+      "end_byte": 111,
+      "line": 3
+    },
+    {
+      "kind": "call",
+      "name": "require",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 127,
+      "end_byte": 148,
+      "line": 4
+    },
+    {
+      "kind": "string",
+      "name": "lib.helper",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 135,
+      "end_byte": 147,
+      "line": 4
+    },
+    {
+      "kind": "call",
+      "name": "notanimport",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 163,
+      "end_byte": 179,
+      "line": 5
+    },
+    {
+      "kind": "call",
+      "name": "RegisterNUICallback",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 181,
+      "end_byte": 248,
+      "line": 7
+    },
+    {
+      "kind": "call",
+      "name": "cb",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 235,
+      "end_byte": 243,
+      "line": 8
+    },
+    {
+      "kind": "call",
+      "name": "AddEventHandler",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 250,
+      "end_byte": 349,
+      "line": 11
+    },
+    {
+      "kind": "call",
+      "name": "RegisterCommand",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 351,
+      "end_byte": 425,
+      "line": 15
+    },
+    {
+      "kind": "call",
+      "name": "RegisterSecureServerEvent",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 427,
+      "end_byte": 493,
+      "line": 19
+    },
+    {
+      "kind": "call",
+      "name": "exports",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 495,
+      "end_byte": 542,
+      "line": 23
+    },
+    {
+      "kind": "call",
+      "name": "query",
+      "qualifier": "MySQL",
+      "is_self": false,
+      "start_byte": 544,
+      "end_byte": 607,
+      "line": 27
+    },
+    {
+      "kind": "string",
+      "name": "vrp/select",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 556,
+      "end_byte": 568,
+      "line": 27
+    },
+    {
+      "kind": "call",
+      "name": "AddEventHandler",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 609,
+      "end_byte": 687,
+      "line": 31
+    },
+    {
+      "kind": "call",
+      "name": "GetCurrentResourceName",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 635,
+      "end_byte": 659,
+      "line": 31
+    },
+    {
+      "kind": "call",
+      "name": "Wait",
+      "qualifier": null,
+      "is_self": false,
+      "start_byte": 689,
+      "end_byte": 714,
+      "line": 35
+    }
+  ],
+  "scopes": [],
+  "errors": []
+}

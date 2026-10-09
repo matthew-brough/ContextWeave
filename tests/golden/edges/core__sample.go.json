@@ -1,0 +1,24 @@
+{
+  "refs": [
+    {
+      "kind": "call",
+      "name": "Errorf",
+      "qualifier": "fmt",
+      "is_self": false,
+      "start_byte": 405,
+      "end_byte": 444,
+      "line": 28
+    },
+    {
+      "kind": "call",
+      "name": "ToUpper",
+      "qualifier": "alias",
+      "is_self": false,
+      "start_byte": 424,
+      "end_byte": 443,
+      "line": 28
+    }
+  ],
+  "scopes": [],
+  "errors": []
+}

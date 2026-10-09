@@ -115,13 +115,29 @@ CREATE TABLE chunk_symbols (
   PRIMARY KEY (chunk_id, symbol_id)
 );
 
+CREATE TABLE symbol_refs (
+  id         INTEGER PRIMARY KEY,
+  file_id    INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  from_id    INTEGER REFERENCES symbols(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  qualifier  TEXT,
+  is_self    INTEGER NOT NULL,
+  line       INTEGER NOT NULL,
+  start_byte INTEGER NOT NULL
+);
+
 CREATE TABLE symbol_edges (
-  from_id    INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
-  to_id      INTEGER REFERENCES symbols(id) ON DELETE SET NULL,
-  to_name    TEXT NOT NULL,
-  rel        TEXT NOT NULL,
-  resolution TEXT NOT NULL CHECK (resolution IN ('exact', 'import', 'event', 'name')),
-  line       INTEGER NOT NULL
+  from_id      INTEGER REFERENCES symbols(id) ON DELETE CASCADE,
+  from_file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  to_id        INTEGER REFERENCES symbols(id) ON DELETE CASCADE,
+  to_file_id   INTEGER REFERENCES files(id) ON DELETE CASCADE,
+  to_node_id   INTEGER REFERENCES schema_nodes(id) ON DELETE CASCADE,
+  to_name      TEXT NOT NULL,
+  rel          TEXT NOT NULL,
+  resolution   TEXT NOT NULL CHECK (resolution IN ('exact', 'import', 'event', 'name')),
+  line         INTEGER NOT NULL,
+  detail       TEXT
 );
 
 CREATE TABLE annotations (
@@ -176,6 +192,27 @@ CREATE INDEX idx_schema_file   ON schema_nodes(file_id);
 CREATE INDEX idx_doc_slug      ON doc_nodes(slug);
 CREATE INDEX idx_doc_file      ON doc_nodes(file_id);
 CREATE INDEX idx_chunks_file   ON chunks(file_id);
+CREATE INDEX idx_refs_file     ON symbol_refs(file_id);
 CREATE INDEX idx_edges_from    ON symbol_edges(from_id);
+CREATE INDEX idx_edges_from_file ON symbol_edges(from_file_id);
 CREATE INDEX idx_edges_to      ON symbol_edges(to_id);
+CREATE INDEX idx_edges_to_file ON symbol_edges(to_file_id);
+CREATE INDEX idx_edges_to_node ON symbol_edges(to_node_id);
 CREATE INDEX idx_feedback_pack ON feedback(pack_id);
+
+CREATE TABLE served_items (
+  pack_id           TEXT NOT NULL,
+  ref               TEXT NOT NULL,
+  path              TEXT NOT NULL,
+  answers_query     REAL NOT NULL,
+  relevance         REAL NOT NULL,
+  implementation    REAL NOT NULL,
+  lexical_match     REAL NOT NULL,
+  structural_value  REAL NOT NULL,
+  graph_proximity   REAL NOT NULL,
+  redundancy        REAL NOT NULL,
+  ts                INTEGER NOT NULL
+);
+
+CREATE INDEX idx_served_pack ON served_items(pack_id);
+CREATE INDEX idx_served_ts   ON served_items(ts);

@@ -3,6 +3,8 @@ import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass
 
+from contextweave.compact.rules import compact_items
+from contextweave.compact.sources import SourceCache
 from contextweave.core.budget import (
     Ceiling,
     Estimator,
@@ -25,6 +27,7 @@ from contextweave.retrieve.candidates import Candidate, CandidateSet
 from contextweave.retrieve.context import QueryContext
 from contextweave.retrieve.ladder import next_rung
 from contextweave.retrieve.pack import (
+    LOSSLESS_REPS,
     BudgetWire,
     ContextPack,
     CoverageWire,
@@ -85,10 +88,15 @@ def pick_symbol(view: FileView, name: str, chunk: Chunk) -> SymbolRecord | None:
 def ref_of(
     key: str, cand: Candidate, chunk: Chunk, symbol: SymbolRecord | None, body: bytes
 ) -> str:
-    """Ref per the anchor table: symbol hash, chunk hash for parts, slice hash for byte ranges."""
+    """Ref per the anchor table; a symbol ref only when the symbol is exactly the served bytes (V6)."""
     sliced = hash_bytes(body)[:HASH_LENGTH]
+    exact = (
+        symbol is not None
+        and symbol.start_byte == cand.start_byte
+        and symbol.end_byte == cand.end_byte
+    )
     match cand.anchor:
-        case SymbolAnchor() if symbol is not None:
+        case SymbolAnchor() if symbol is not None and exact:
             ref = Ref(key, cand.path, cand.anchor, symbol.content_hash[:HASH_LENGTH])
         case PartAnchor():
             ref = Ref(key, cand.path, cand.anchor, chunk.content_hash[:HASH_LENGTH])
@@ -200,7 +208,7 @@ class Fitter:
             key=self.ctx.project_key,
             pack_id=self.pack_id,
         )
-        truncated = bool(dropped) or any(item.rep != "source" for item in live)
+        truncated = bool(dropped) or any(item.rep not in LOSSLESS_REPS for item in live)
         budget = BudgetWire(
             served_tokens=self.ceiling.limit, ceiling=self.ceiling.limit, truncated=truncated
         )
@@ -314,10 +322,14 @@ class AssembleStage:
     def assemble(self, ctx: QueryContext, cands: CandidateSet) -> PackResult:
         ceiling = Ceiling(effective_limit(ctx))
         views: dict[str, FileView | None] = {}
+        sources = SourceCache(ctx.root)
         items: list[PackItem] = []
         for cand in cands:
             if cand.path not in views:
                 views[cand.path] = load_view(ctx.store, cand.path)
+                loaded = views[cand.path]
+                if loaded is not None:
+                    sources.preload(cand.path, loaded.source)
             view = views[cand.path]
             item = None if view is None else make_item(ctx.project_key, cand, view)
             if item is None:
@@ -326,7 +338,8 @@ class AssembleStage:
                 )
                 continue
             items.append(item)
-        return Fitter(ctx, ceiling, self.render, self.estimator).fit(items)
+        compacted = compact_items(sources, tuple(ordered_items(items)))
+        return Fitter(ctx, ceiling, self.render, self.estimator).fit(list(compacted))
 
     def run(self, ctx: QueryContext, cands: CandidateSet) -> CandidateSet:
         ctx.pack.value = self.assemble(ctx, cands)
