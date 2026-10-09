@@ -3,6 +3,7 @@ import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass
 
+from contextweave.compact.lossy import prepare_lossy
 from contextweave.compact.rules import compact_items
 from contextweave.compact.sources import SourceCache
 from contextweave.core.budget import (
@@ -279,6 +280,8 @@ class Fitter:
         omitted_max = max(1, self.ctx.config.budget.omitted_max)
         allow_critical = False
         _, _, tokens = self.build(live, dropped, 1)
+        if not self.ceiling.fits(tokens):
+            live = prepare_lossy(self.ctx.store, self.ctx.config.models.annotate, live)
         while not self.ceiling.fits(tokens):
             if not self.trim(live, dropped, self.ceiling.over_by(tokens), allow_critical):
                 if allow_critical:

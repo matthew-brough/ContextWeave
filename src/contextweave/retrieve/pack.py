@@ -4,7 +4,7 @@ from typing import Literal, NotRequired, TypedDict
 from contextweave.core.errors import DegradedEntry, ErrorEntry, OmittedEntry, OverflowEntry
 from contextweave.retrieve.candidates import Candidate
 
-type Rep = Literal["source", "signature", "collapsed"]
+type Rep = Literal["source", "signature", "collapsed", "summary", "schema"]
 
 LOSSLESS_REPS: frozenset[Rep] = frozenset({"source", "collapsed"})
 
@@ -73,6 +73,8 @@ class ItemWire(TypedDict):
     synthesized: bool
     oversize: bool
     text: str
+    model: NotRequired[str]
+    prompt_version: NotRequired[int]
 
 
 class BudgetWire(TypedDict):
@@ -94,6 +96,24 @@ class ContextPack(TypedDict):
 
 
 @dataclass(frozen=True, slots=True)
+class CachedAnnotation:
+    """A cached annotation whose content hash and model/prompt version match the chunk it describes."""
+
+    purpose: str
+    model_id: str
+    prompt_version: int
+
+
+@dataclass(frozen=True, slots=True)
+class Folds:
+    """Deterministic lossy renderings precomputed from the index; None when not applicable."""
+
+    key_paths: str | None = None
+    members: str | None = None
+    reexports: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class PackItem:
     """One served chunk: its candidate, ref, current representation and text."""
 
@@ -105,14 +125,19 @@ class PackItem:
     start_line: int
     end_line: int
     oversize: bool
+    annotation: CachedAnnotation | None = None
+    folds: Folds = Folds()
 
     def with_signature_rep(self) -> PackItem:
         return replace(self, rep="signature", text=self.signature or self.text)
 
+    def with_text_rep(self, rep: Rep, text: str) -> PackItem:
+        return replace(self, rep=rep, text=text)
+
     def to_wire(self) -> ItemWire:
         cand = self.cand
         scores = cand.scores
-        return ItemWire(
+        wire = ItemWire(
             ref=self.ref,
             rep=self.rep,
             profile=cand.profile,
@@ -139,10 +164,14 @@ class PackItem:
                 for edge in cand.edges
             ],
             freshness="fresh",
-            synthesized=False,
+            synthesized=self.rep == "summary",
             oversize=self.oversize,
             text=self.text,
         )
+        if self.rep == "summary" and self.annotation is not None:
+            wire["model"] = self.annotation.model_id
+            wire["prompt_version"] = self.annotation.prompt_version
+        return wire
 
     def to_omitted(self, reason: str) -> OmittedEntry:
         cand = self.cand

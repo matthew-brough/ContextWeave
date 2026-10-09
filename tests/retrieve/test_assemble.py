@@ -204,7 +204,16 @@ def pack_item(**changes: object) -> PackItem:
 
 
 def test_ladder_order_and_critical_floor() -> None:
-    assert [rung.name for rung in LADDER] == ["signature", "ref"]
+    assert [rung.name for rung in LADDER] == [
+        "fold_boilerplate",
+        "fold_reexports",
+        "names_only",
+        "key_paths",
+        "member_list",
+        "summary",
+        "signature",
+        "ref",
+    ]
     item = pack_item()
     rung = next_rung(item, False)
     assert rung is not None and rung.name == "signature"
