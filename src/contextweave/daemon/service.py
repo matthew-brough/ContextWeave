@@ -22,6 +22,7 @@ from contextweave.daemon.models import ModelRuntime
 from contextweave.daemon.projects import ProjectManager
 from contextweave.daemon.runner import IndexRunner
 from contextweave.daemon.scheduler import ActivityGate, JobKind, Priority, Scheduler, Worker
+from contextweave.daemon.skipwarn import skip_rate_warnings
 from contextweave.daemon.watcher import FileEvent, PollWatcher
 from contextweave.index.projects import ProjectEntry, ProjectRegistry
 from contextweave.models.residency import Profile
@@ -144,7 +145,7 @@ class DaemonService:
             projects,
             worker,
             base,
-            InprocTransport(env),
+            InprocTransport(env, skip_rate_warnings(models)),
             models,
         )
 
@@ -220,12 +221,27 @@ def _status(service: DaemonService, params: Params) -> JSON:
             }
         )
     profile = service.models.slots.residency.current if service.models is not None else None
+    slots: list[JSON] = []
+    if service.models is not None:
+        for health in service.models.slots.status():
+            slots.append(
+                {
+                    "slot": health.slot.value,
+                    "active": str(health.active) if health.active is not None else None,
+                    "down": [str(device) for device in health.down],
+                    "skips_total": health.skips_total,
+                    "calls_in_window": health.calls_in_window,
+                    "skip_rate": round(health.skip_rate, 4),
+                    "warn": health.warn,
+                }
+            )
     return {
         "pid": os.getpid(),
         "version": version("contextweave"),
         "uptime_s": round(time.time() - service.started_at, 3),
         "queue": service.scheduler.pending(),
         "profile": profile.value if profile is not None else None,
+        "models": slots,
         "projects": projects,
     }
 

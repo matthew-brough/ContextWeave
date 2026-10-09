@@ -1,8 +1,10 @@
+import json
 from pathlib import Path
 
 import pytest
 from daemon_support import Project, RunningDaemon, eventually
 
+from contextweave.agents.cli_entry import run_hook
 from contextweave.agents.transport import HookTransport, IpcTransport
 from contextweave.core.config import load_config
 from contextweave.core.project import ResolvedProject
@@ -90,3 +92,21 @@ def test_remote_errors_and_spawn_failure_are_swallowed(
         )
         is None
     )
+
+
+def test_cw_hook_entrypoint_uses_ipc_by_default(daemon: RunningDaemon, project: Project) -> None:
+    body = {"session_id": SESSION, "cwd": str(project.root)}
+    out, code = run_hook("SessionStart", json.dumps(body).encode(), daemon.env)
+    assert code == 0
+    assert "additionalContext" in json.loads(out)["hookSpecificOutput"]
+    prompt = json.dumps({**body, "prompt": "why is alpha one"}).encode()
+    assert run_hook("UserPromptSubmit", prompt, daemon.env) == (b"", 0)
+    assert eventually(
+        lambda: counts(daemon.env, project.key) == {"sessions": 1, "prompts": 1, "tool_events": 0}
+    )
+
+
+def test_daemon_status_lists_model_slots(daemon: RunningDaemon) -> None:
+    status = daemon.client.call("status")
+    assert isinstance(status, dict)
+    assert status["models"] == []

@@ -1,4 +1,4 @@
-from collections.abc import Generator, Mapping
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Protocol
@@ -90,10 +90,13 @@ def index_health(root: Path) -> str:
 
 
 class InprocTransport:
-    """Writes straight to the project's memory.db in the hook process."""
+    """Writes straight to the project's memory.db; warnings supplies live backend warnings."""
 
-    def __init__(self, env: Mapping[str, str]) -> None:
+    def __init__(
+        self, env: Mapping[str, str], warnings: Callable[[], Sequence[str]] | None = None
+    ) -> None:
         self._env = env
+        self._extra_warnings = warnings
 
     @contextmanager
     def _store(self, project: ResolvedProject) -> Generator[MemoryStore]:
@@ -112,6 +115,8 @@ class InprocTransport:
                 f"warning: config_invalid key {issue.key} in {issue.file}"
                 for issue in loaded.issues
             ]
+            if self._extra_warnings is not None:
+                warnings.extend(self._extra_warnings())
             return build_session_context(
                 title=f"ContextWeave project {project.root.name} ({project.key})",
                 health=index_health(project.root),

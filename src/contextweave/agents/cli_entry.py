@@ -7,10 +7,11 @@ from contextweave.agents.base import AgentConfigError, FileChange, InstallOpts
 from contextweave.agents.catalog import DEFAULT_AGENT, default_adapters
 from contextweave.agents.conflicts import Conflict, detect_conflicts, format_conflicts
 from contextweave.agents.hooks import run_hook as dispatch_hook
-from contextweave.agents.transport import HookTransport
+from contextweave.agents.transport import HookTransport, IpcTransport
 from contextweave.core.config import Config, ConfigError, load_config
 from contextweave.core.paths import user_state_dir
 from contextweave.core.registry import UnknownKeyError
+from contextweave.daemon.lifecycle import client_for
 from contextweave.index.indexer import IndexReport, index_project
 from contextweave.index.projects import ProjectRegistry
 from contextweave.index.root import ensure_self_ignore
@@ -35,6 +36,21 @@ class CommandResult:
 
 def _failure(code: int, message: str) -> CommandResult:
     return CommandResult(code, (message,))
+
+
+def describe_index(report: IndexReport) -> tuple[str, ...]:
+    """Summary lines of an init index pass, including model work left to finish."""
+    lines = [
+        f"indexed: {len(report.added)} added, {len(report.updated)} updated, "
+        f"{len(report.removed)} removed, {report.unchanged} unchanged"
+    ]
+    embed = report.embed
+    if embed is not None:
+        lines.append(f"embedded {embed.embedded} chunks, {embed.pending} pending")
+        lines.extend(f"degraded {entry['stage']}: {entry['reason']}" for entry in embed.degraded)
+        if embed.pending:
+            lines.append("rerun `cw index` to finish embedding")
+    return tuple(lines)
 
 
 def run_init(
@@ -72,12 +88,14 @@ def run_init(
         return CommandResult(EXIT_OK, ("dry run: no files written",), tuple(planned), conflicts)
     ensure_self_ignore(project)
     try:
-        indexer(project, config)
+        report = indexer(project, config)
     except Exception as exc:
         return _failure(EXIT_FAILED, f"index failed, project not registered: {exc}")
     ProjectRegistry(user_state_dir(environment)).register(project)
     changes = adapter.install(project, InstallOpts(user_home, plugin, plugin_dir, dry_run=False))
-    return CommandResult(EXIT_OK, (), tuple(changes), conflicts, registered=True)
+    return CommandResult(
+        EXIT_OK, describe_index(report), tuple(changes), conflicts, registered=True
+    )
 
 
 def run_uninstall(
@@ -111,4 +129,7 @@ def run_hook(
 ) -> tuple[bytes, int]:
     """Entry for `cw hook <event>`: stdout bytes and an exit code that is always 0."""
     environment = os.environ if env is None else env
-    return dispatch_hook(event, stdin_bytes, env=environment, transport=transport)
+    chosen = (
+        transport if transport is not None else IpcTransport(client_for(environment), environment)
+    )
+    return dispatch_hook(event, stdin_bytes, env=environment, transport=chosen)

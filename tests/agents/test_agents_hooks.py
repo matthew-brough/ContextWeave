@@ -136,14 +136,14 @@ def test_dispatch_each_event(root: Path, project: ResolvedProject, env: dict[str
 def test_inproc_records_full_session(
     root: Path, project: ResolvedProject, env: dict[str, str]
 ) -> None:
-    run_hook("SessionStart", payload(root), env)
-    run_hook("UserPromptSubmit", payload(root, prompt="why is x"), env)
+    run_hook("SessionStart", payload(root), env, InprocTransport(env))
+    run_hook("UserPromptSubmit", payload(root, prompt="why is x"), env, InprocTransport(env))
     tool = payload(
         root, tool_name="Edit", tool_input={"file_path": "a.py"}, tool_response={"ok": 1}
     )
-    run_hook("PostToolUse", tool, env)
-    run_hook("Stop", payload(root), env)
-    run_hook("SessionEnd", payload(root), env)
+    run_hook("PostToolUse", tool, env, InprocTransport(env))
+    run_hook("Stop", payload(root), env, InprocTransport(env))
+    run_hook("SessionEnd", payload(root), env, InprocTransport(env))
     with store_of(env, project.key) as store:
         assert count(store, "sessions") == 1
         assert count(store, "prompts") == 1
@@ -218,7 +218,7 @@ def test_session_start_injection_is_budgeted_and_scoped(
         for index in range(40):
             remember(mine, "decision", f"decision {index} " + "word " * 40, "because " * 20)
             remember(mine, "code_area", "area " * 30, path=f"src/file{index}.py")
-    out, code = run_hook("SessionStart", payload(root), env)
+    out, code = run_hook("SessionStart", payload(root), env, InprocTransport(env))
     assert code == 0
     text = json.loads(out)["hookSpecificOutput"]["additionalContext"]
     assert bytes35(text) <= 400
@@ -235,7 +235,7 @@ def test_session_start_respects_configured_budget(
     )
     with store_of(env, project.key) as mine:
         remember(mine, "decision", "x " * 100, "y " * 100)
-    out, _ = run_hook("SessionStart", payload(root), env)
+    out, _ = run_hook("SessionStart", payload(root), env, InprocTransport(env))
     assert bytes35(json.loads(out)["hookSpecificOutput"]["additionalContext"]) <= 30
 
 
@@ -243,7 +243,7 @@ def test_session_start_warns_on_config_issue(
     root: Path, project: ResolvedProject, env: dict[str, str]
 ) -> None:
     (root / ".contextweave.toml").write_text("[hooks]\nbogus = 1\n", encoding="utf-8")
-    out, _ = run_hook("SessionStart", payload(root), env)
+    out, _ = run_hook("SessionStart", payload(root), env, InprocTransport(env))
     text = json.loads(out)["hookSpecificOutput"]["additionalContext"]
     assert "config_invalid" in text and "hooks.bogus" in text
 
@@ -252,7 +252,7 @@ def test_session_start_reports_built_index(
     root: Path, project: ResolvedProject, env: dict[str, str]
 ) -> None:
     index_project(root, Config())
-    out, _ = run_hook("SessionStart", payload(root), env)
+    out, _ = run_hook("SessionStart", payload(root), env, InprocTransport(env))
     assert "index: 1 files" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
 
 

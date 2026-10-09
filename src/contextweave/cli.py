@@ -8,6 +8,20 @@ from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 
+from contextweave.cli_commands import (
+    agents_cmd,
+    cache,
+    config_show,
+    forget,
+    index_cmd,
+    languages,
+    projects,
+    recall,
+    savings,
+    search,
+    status,
+)
+from contextweave.cli_commands.common import CommandContext
 from contextweave.core.config import load_config
 from contextweave.core.paths import user_state_dir
 from contextweave.core.types import JSON
@@ -52,6 +66,17 @@ def build_parser() -> argparse.ArgumentParser:
     call.add_argument("method", help="IPC method, e.g. ping or status")
     call.add_argument("params", nargs="?", default="{}", help="JSON object of parameters")
     add_eval_parser(commands)
+    agents_cmd.add_parsers(commands)
+    index_cmd.add_parser(commands)
+    status.add_parser(commands)
+    search.add_parser(commands)
+    recall.add_parser(commands)
+    savings.add_parser(commands)
+    config_show.add_parser(commands)
+    languages.add_parser(commands)
+    projects.add_parser(commands)
+    forget.add_parser(commands)
+    cache.add_parser(commands)
     return parser
 
 
@@ -126,23 +151,63 @@ def _daemon(action: str, args: argparse.Namespace, env: Mapping[str, str]) -> in
             return _daemon_call(env, args.method, args.params)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _dispatch(args: argparse.Namespace, ctx: CommandContext) -> int:
+    match args.command:
+        case "serve":
+            return _serve(args.inproc, args.readonly, ctx.env)
+        case "daemon":
+            return _daemon(args.daemon_command, args, ctx.env)
+        case "eval":
+            return run_eval(options_from_args(args))
+        case "init":
+            return agents_cmd.run_init_command(args, ctx)
+        case "uninstall":
+            return agents_cmd.run_uninstall_command(args, ctx)
+        case "hook":
+            return agents_cmd.run_hook_command(args, ctx)
+        case "index":
+            return index_cmd.run(args, ctx)
+        case "status":
+            return status.run(args.as_json, ctx)
+        case "search":
+            return search.run(args, ctx)
+        case "recall":
+            return recall.run(args, ctx)
+        case "savings":
+            return savings.run(args, ctx)
+        case "config":
+            return config_show.run(args, ctx)
+        case "languages":
+            return languages.run()
+        case "projects":
+            return projects.run(args, ctx)
+        case "forget":
+            return forget.run(args, ctx)
+        case "cache":
+            return cache.run(args, ctx)
+        case _:
+            return 0
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    env: Mapping[str, str] | None = None,
+    cwd: Path | None = None,
+) -> int:
     """Entry point for `cw` / `contextweave`.
 
     argv: Sequence[str] | None — arguments excluding program name; defaults to sys.argv.
+    env: Mapping[str, str] | None — environment; defaults to os.environ.
+    cwd: Path | None — working directory; defaults to the process cwd.
     """
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
         return 0
-    if args.command == "serve":
-        return _serve(args.inproc, args.readonly, os.environ)
-    if args.command == "daemon":
-        return _daemon(args.daemon_command, args, os.environ)
-    if args.command == "eval":
-        return run_eval(options_from_args(args))
-    return 0
+    context = CommandContext(os.environ if env is None else env, cwd or Path.cwd())
+    return _dispatch(args, context)
 
 
 if __name__ == "__main__":
