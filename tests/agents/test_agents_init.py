@@ -108,3 +108,15 @@ def test_uninstall_reverses_init(root: Path, home: Path, env: dict[str, str]) ->
     assert result.exit_code == 0 and len(result.changes) == 3
     assert not (root / ".mcp.json").exists() and not (root / "CLAUDE.md").exists()
     assert not (root / ".claude").exists()
+
+
+def test_agent_none_indexes_and_registers_without_agent_files(
+    root: Path, home: Path, env: dict[str, str]
+) -> None:
+    write_json(root / ".mcp.json", {"mcpServers": {"context-engine": {"command": "cce"}}})
+    result = run_init(root, agent="none", home=home, env=env)
+    assert result.exit_code == 0 and result.registered
+    assert result.changes == () and result.conflicts == ()
+    assert (root / ".contextweave" / "index.db").is_file()
+    assert read_json(root / ".mcp.json") == {"mcpServers": {"context-engine": {"command": "cce"}}}
+    assert not (root / "CLAUDE.md").exists()

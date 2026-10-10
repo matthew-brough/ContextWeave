@@ -5,6 +5,7 @@ from contextweave.agents.codex import CodexAdapter
 from contextweave.core.registry import Registry
 
 DEFAULT_AGENT = "claude_code"
+NO_AGENT = "none"
 
 
 def default_adapters() -> AdapterRegistry:

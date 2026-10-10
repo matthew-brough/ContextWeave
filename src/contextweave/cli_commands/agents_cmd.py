@@ -2,7 +2,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from contextweave.agents.catalog import DEFAULT_AGENT
+from contextweave.agents.catalog import DEFAULT_AGENT, NO_AGENT
 from contextweave.agents.cli_entry import CommandResult, run_hook, run_init, run_uninstall
 from contextweave.cli_commands.common import CommandContext, SubparserRegistry, complain, say
 from contextweave.cli_commands.indexing import full_index
@@ -13,7 +13,9 @@ from contextweave.index.root import discover_root
 
 def add_parsers(commands: SubparserRegistry) -> None:
     init = commands.add_parser("init", help="Index this project and install agent integration")
-    init.add_argument("--agent", default=DEFAULT_AGENT)
+    init.add_argument(
+        "--agent", default=DEFAULT_AGENT, help=f"Agent to install for; '{NO_AGENT}' = index only"
+    )
     init.add_argument("--plugin", action="store_true", help="Write a plugin dir instead")
     init.add_argument("--force", action="store_true", help="Install despite parent conflicts")
     init.add_argument("--dry-run", action="store_true", dest="dry_run")

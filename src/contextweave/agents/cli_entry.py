@@ -3,8 +3,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from contextweave.agents.base import AgentConfigError, FileChange, InstallOpts
-from contextweave.agents.catalog import DEFAULT_AGENT, default_adapters
+from contextweave.agents.base import AgentAdapter, AgentConfigError, FileChange, InstallOpts
+from contextweave.agents.catalog import DEFAULT_AGENT, NO_AGENT, default_adapters
 from contextweave.agents.conflicts import Conflict, detect_conflicts, format_conflicts
 from contextweave.agents.hooks import run_hook as dispatch_hook
 from contextweave.agents.transport import HookTransport, IpcTransport
@@ -67,24 +67,26 @@ def run_init(
     plugin_dir: Path | None = None,
     indexer: Indexer = index_project,
 ) -> CommandResult:
-    """Conflict check, self-ignore, full index, register, then install; index precedes register."""
+    """Conflict check, self-ignore, full index, register, then install; agent "none" skips install."""
     project = root.resolve()
     environment = os.environ if env is None else env
     user_home = home if home is not None else Path.home()
-    try:
-        adapter = default_adapters().get(agent)
-    except UnknownKeyError:
-        return _failure(EXIT_USAGE, f"unknown agent: {agent}")
+    adapter: AgentAdapter | None = None
+    if agent != NO_AGENT:
+        try:
+            adapter = default_adapters().get(agent)
+        except UnknownKeyError:
+            return _failure(EXIT_USAGE, f"unknown agent: {agent}")
     try:
         config = load_config(project, strict=True, env=environment).config
     except ConfigError as exc:
         return _failure(EXIT_USAGE, str(exc))
-    conflicts = tuple(detect_conflicts(project, user_home, environment))
+    conflicts = () if adapter is None else tuple(detect_conflicts(project, user_home, environment))
     if conflicts and not force:
         return CommandResult(EXIT_FAILED, (format_conflicts(list(conflicts)),), (), conflicts)
     opts = InstallOpts(user_home, plugin, plugin_dir, dry_run=True, env=environment)
     try:
-        planned = adapter.install(project, opts)
+        planned = [] if adapter is None else adapter.install(project, opts)
     except AgentConfigError as exc:
         return _failure(EXIT_FAILED, f"cannot merge agent config: {exc}")
     if dry_run:
@@ -95,8 +97,12 @@ def run_init(
     except Exception as exc:
         return _failure(EXIT_FAILED, f"index failed, project not registered: {exc}")
     ProjectRegistry(user_state_dir(environment)).register(project)
-    changes = adapter.install(
-        project, InstallOpts(user_home, plugin, plugin_dir, dry_run=False, env=environment)
+    changes = (
+        []
+        if adapter is None
+        else adapter.install(
+            project, InstallOpts(user_home, plugin, plugin_dir, dry_run=False, env=environment)
+        )
     )
     return CommandResult(
         EXIT_OK, describe_index(report), tuple(changes), conflicts, registered=True
