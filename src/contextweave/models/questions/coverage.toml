@@ -1,12 +1,21 @@
-question_set_version = 1
+question_set_version = 2
 
 [[question]]
 name = "sufficient"
 text = "Is the code listed in the pack enough to answer the query?"
-kind = "binary"
+kind = "noul"
 
 [[question]]
 name = "missing_rel"
 text = "Which kind of related code is missing from the pack?"
 kind = "choice"
-options = ["callers", "callees", "imports", "tests", "config", "emitters", "listeners", "none"]
+criteria = [
+  { label = "callers", description = "Code that calls the listed code." },
+  { label = "callees", description = "Code the listed code calls." },
+  { label = "imports", description = "Modules the listed code imports or depends on." },
+  { label = "tests", description = "Tests that exercise the listed code." },
+  { label = "config", description = "Configuration or settings that drive the listed code." },
+  { label = "emitters", description = "Code that fires the events the listed code handles." },
+  { label = "listeners", description = "Code that handles the events the listed code fires." },
+  { label = "none", description = "Nothing is missing." },
+]

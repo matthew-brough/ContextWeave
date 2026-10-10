@@ -24,6 +24,7 @@ from contextweave.eval.runner import calibration_of, render_calibration, render_
 from contextweave.eval.suite import parse_suite
 from contextweave.eval.variants import (
     BUILD_ENV,
+    CLEF_MODEL,
     DEVICES_ENV,
     MODEL_ENV,
     PROVIDER_ENV,
@@ -86,7 +87,7 @@ def test_variant_registry_has_kev_clef_skip() -> None:
 def test_kev_env_carries_device_model_and_build() -> None:
     env = default_variants().get("kev").env(VariantOptions("gpu", "m", "b1"))
     assert env == {
-        PROVIDER_ENV: "kev",
+        PROVIDER_ENV: "systemone",
         DEVICES_ENV: '["gpu"]',
         MODEL_ENV: "m",
         BUILD_ENV: "b1",
@@ -95,7 +96,8 @@ def test_kev_env_carries_device_model_and_build() -> None:
 
 def test_auto_device_keeps_the_chain() -> None:
     env = default_variants().get("clef").env(VariantOptions())
-    assert env[PROVIDER_ENV] == "clef"
+    assert env[PROVIDER_ENV] == "systemone"
+    assert env[MODEL_ENV] == CLEF_MODEL
     assert env[DEVICES_ENV] == '["gpu", "cpu"]'
 
 
@@ -138,7 +140,7 @@ def test_run_eval_runs_each_variant_with_its_env_and_full_profile(
     out = capsys.readouterr().out
     assert code == 0
     variant_runs = seen[1:]
-    assert [c.env.get(PROVIDER_ENV) for c in variant_runs] == ["kev", "none"]
+    assert [c.env.get(PROVIDER_ENV) for c in variant_runs] == ["systemone", "none"]
     assert all(c.profile == "full" for c in variant_runs)
     assert variant_runs[0].env[DEVICES_ENV] == '["gpu"]'
     assert "cw[kev/gpu]" in out
@@ -157,7 +159,7 @@ def test_write_calibration_stores_fitted_temperatures(tmp_path: Path) -> None:
     )
     assert run_eval(options, wiring) == 0
     loaded = load_calibration(tmp_path / "cal.json")
-    assert "relevance" in loaded.temperatures(CalibrationKey("m", "b", 1))
+    assert "relevance" in loaded.temperatures(CalibrationKey("m", "b", 2))
 
 
 def test_skip_counts_reach_the_table() -> None:

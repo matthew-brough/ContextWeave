@@ -126,15 +126,20 @@ code: def call(self, slot, fn, stage=None):
 
 [[gate_questions]]
 name = "answers_query"
-text = "Does the candidate answer the query?"
-kind = "binary"
-options = ["yes", "no"]
+text = "Does the candidate directly answer the query?"
+kind = "noul"
 
 [[gate_questions]]
 name = "relevance"
 text = "How relevant is the candidate to the query?"
 kind = "score"
-options = ["0", "0.25", "0.5", "0.75", "1"]
+options = ["off_topic", "related", "partial", "full"]
+descriptions = [
+    "Unrelated to the query.",
+    "Same area as the query but does not address it.",
+    "Addresses part of the query.",
+    "Fully addresses the query.",
+]
 
 [[gate_questions]]
 name = "role"
@@ -146,13 +151,25 @@ options = ["implementation", "interface", "caller", "test", "config", "boilerpla
 name = "structural_value"
 text = "How much structural context does the candidate add?"
 kind = "score"
-options = ["0", "0.25", "0.5", "0.75", "1"]
+options = ["none", "some", "useful", "essential"]
+descriptions = [
+    "Adds no structural context.",
+    "Adds a little context.",
+    "Clarifies how the answer fits together.",
+    "Needed to understand the answer.",
+]
 
 [score_question]
 name = "relevance"
 text = "How relevant is the candidate to the query?"
 kind = "score"
-options = ["0", "0.25", "0.5", "0.75", "1"]
+options = ["off_topic", "related", "partial", "full"]
+descriptions = [
+    "Unrelated to the query.",
+    "Same area as the query but does not address it.",
+    "Addresses part of the query.",
+    "Fully addresses the query.",
+]
 
 [dynamic_question]
 name = "scope"

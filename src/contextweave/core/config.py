@@ -46,9 +46,9 @@ class FuseConfig:
 
 @dataclass(frozen=True, slots=True)
 class GateConfig:
-    window: int = 30
-    expand_window: int = 20
-    card_tokens: int = 256
+    window: int = 8
+    expand_window: int = 8
+    card_tokens: int = 128
     critical: float = 0.8
 
 
@@ -99,47 +99,54 @@ class PipelineConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class EmbedConfig:
-    provider: str = "ollama"
-    model: str = "jina-code-embeddings-1.5b"
-    dim: int = 1536
-    query_prefix: str = "Find the most relevant code snippet given the following query:\n"
-    doc_prefix: str = "Candidate code snippet:\n"
-    memory_prefix: str = ""
-    query_device: str = "cpu"
-
-
-@dataclass(frozen=True, slots=True)
-class AnnotateConfig:
-    provider: str = "ollama"
-    model: str = "qwen3.5:4b"
-    think: bool = False
-    prompt_version: int = 1
-
-
-@dataclass(frozen=True, slots=True)
 class DeviceEndpointConfig:
     endpoint: str = ""
     launch: str = ""
 
 
-def _gpu_endpoint() -> DeviceEndpointConfig:
-    return DeviceEndpointConfig(endpoint="http://127.0.0.1:8765")
+def _local(port: int) -> Callable[[], DeviceEndpointConfig]:
+    def endpoint() -> DeviceEndpointConfig:
+        return DeviceEndpointConfig(endpoint=f"http://127.0.0.1:{port}")
+
+    return endpoint
 
 
-def _cpu_endpoint() -> DeviceEndpointConfig:
-    return DeviceEndpointConfig(endpoint="http://127.0.0.1:8766")
+@dataclass(frozen=True, slots=True)
+class EmbedConfig:
+    provider: str = "llama_server"
+    model: str = "jinaai/jina-code-embeddings-1.5b-GGUF:Q8_0"
+    dim: int = 1536
+    query_prefix: str = "Find the most relevant code snippet given the following query:\n"
+    doc_prefix: str = "Candidate code snippet:\n"
+    memory_prefix: str = ""
+    query_device: str = "cpu"
+    devices: tuple[str, ...] = ("gpu", "cpu")
+    gpu: DeviceEndpointConfig = field(default_factory=_local(8770))
+    cpu: DeviceEndpointConfig = field(default_factory=_local(8771))
+
+
+@dataclass(frozen=True, slots=True)
+class AnnotateConfig:
+    provider: str = "llama_server"
+    model: str = "unsloth/Qwen3.5-4B-GGUF:Q4_K_M"
+    think: bool = False
+    prompt_version: int = 1
+    deadline_ms: int = 30000
+    devices: tuple[str, ...] = ("gpu", "cpu")
+    gpu: DeviceEndpointConfig = field(default_factory=_local(8772))
+    cpu: DeviceEndpointConfig = field(default_factory=_local(8773))
 
 
 @dataclass(frozen=True, slots=True)
 class ClassifyConfig:
-    provider: str = "kev"
-    model: str = "jaredpalmer/kev-4b"
-    devices: tuple[str, ...] = ("gpu", "cpu")
-    question_set_version: int = 1
-    build_id: str = ""
-    gpu: DeviceEndpointConfig = field(default_factory=_gpu_endpoint)
-    cpu: DeviceEndpointConfig = field(default_factory=_cpu_endpoint)
+    provider: str = "systemone"
+    model: str = "kev-latest"
+    devices: tuple[str, ...] = ("gpu",)
+    question_set_version: int = 2
+    build_id: str = "kev-4b-int8-emb8"
+    parallel: int = 8
+    gpu: DeviceEndpointConfig = field(default_factory=_local(8765))
+    cpu: DeviceEndpointConfig = field(default_factory=_local(8766))
 
 
 @dataclass(frozen=True, slots=True)

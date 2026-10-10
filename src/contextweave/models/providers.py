@@ -7,7 +7,7 @@ from typing import Literal, Protocol, runtime_checkable
 
 import httpx
 
-from contextweave.core.config import EmbedConfig, ModelsConfig
+from contextweave.core.config import DeviceEndpointConfig, EmbedConfig, ModelsConfig
 from contextweave.core.registry import Registry
 from contextweave.core.types import JSON
 from contextweave.models.decision import DecisionClient
@@ -44,7 +44,6 @@ class Message:
 
 @dataclass(frozen=True, slots=True)
 class Endpoints:
-    ollama: str = "http://127.0.0.1:11434"
     openai_base_url: str = "http://127.0.0.1:8000"
     openai_api_key: str = ""
 
@@ -59,6 +58,10 @@ class BuildContext:
     def deadline_s(self) -> float:
         return self.models.deadline_ms / 1000
 
+    @property
+    def annotate_deadline_s(self) -> float:
+        return self.models.annotate.deadline_ms / 1000
+
 
 @runtime_checkable
 class Provider(Protocol):
@@ -66,6 +69,14 @@ class Provider(Protocol):
     def devices(self) -> tuple[Device, ...]: ...
 
     def set_device(self, device: Device) -> None: ...
+
+
+@runtime_checkable
+class Supervised(Protocol):
+    """A provider backed by local servers, one endpoint per device, that residency may launch."""
+
+    @property
+    def servers(self) -> Mapping[Device, DeviceEndpointConfig]: ...
 
 
 @runtime_checkable

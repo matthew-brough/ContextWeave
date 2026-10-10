@@ -1,6 +1,7 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from contextweave.core.config import EmbedConfig
 from contextweave.core.types import JSON
 from contextweave.models.errors import ModelResponseError, ProviderSlotError
 from contextweave.models.http import JsonClient
@@ -30,6 +31,65 @@ class OpenAISettings:
     seed: int = DEFAULT_SEED
 
 
+def embed_over(
+    http: JsonClient,
+    config: EmbedConfig,
+    texts: Sequence[str],
+    kind: EmbedKind,
+    *,
+    timeout_s: float,
+) -> list[list[float]]:
+    """POST /v1/embeddings and return vectors in input order, shaped to the configured dim."""
+    if not texts:
+        return []
+    inputs = embed_inputs(config, texts, kind)
+    body: dict[str, JSON] = {"model": config.model, "input": list(inputs)}
+    reply = http.post(EMBED_PATH, body, timeout_s=timeout_s)
+    rows = as_list(field(reply, "data", EMBED_PATH), "data")
+    ordered: dict[int, list[float]] = {}
+    for position, row in enumerate(rows):
+        item = as_object(row, "data item")
+        index = item.get("index", position)
+        if isinstance(index, bool) or not isinstance(index, int):
+            raise ModelResponseError("data item index is not an integer")
+        ordered[index] = as_vector(field(item, "embedding", "data item"), "embedding")
+    vectors = [ordered[index] for index in sorted(ordered)]
+    return shape_vectors(config, vectors, len(inputs))
+
+
+def chat_body(
+    model: str,
+    prompt_messages: Sequence[Message],
+    json_schema: Mapping[str, JSON],
+    *,
+    seed: int,
+) -> dict[str, JSON]:
+    """Deterministic chat completion request constrained to a strict JSON schema."""
+    return {
+        "model": model,
+        "messages": message_payload(prompt_messages),
+        "temperature": 0,
+        "seed": seed,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": SCHEMA_NAME, "strict": True, "schema": dict(json_schema)},
+        },
+    }
+
+
+def parse_chat(reply: Mapping[str, JSON], json_schema: Mapping[str, JSON]) -> dict[str, JSON]:
+    """The first choice's content decoded against the schema."""
+    choices = as_list(field(reply, "choices", CHAT_PATH), "choices")
+    if not choices:
+        raise ModelResponseError("no choices returned")
+    first = as_object(choices[0], "choice")
+    message = as_object(field(first, "message", "choice"), "message")
+    content = as_str(field(message, "content", "message"), "content")
+    if not content:
+        raise ModelResponseError("empty message content")
+    return parse_structured(content, json_schema)
+
+
 def _http(ctx: BuildContext) -> JsonClient:
     key = ctx.endpoints.openai_api_key
     headers = {"Authorization": f"Bearer {key}"} if key else {}
@@ -55,21 +115,7 @@ class OpenAIEmbed(_RemoteDevice):
         self._deadline_s = ctx.deadline_s
 
     def embed(self, texts: Sequence[str], *, kind: EmbedKind) -> list[list[float]]:
-        if not texts:
-            return []
-        inputs = embed_inputs(self._config, texts, kind)
-        body: dict[str, JSON] = {"model": self._config.model, "input": list(inputs)}
-        reply = self._http.post(EMBED_PATH, body, timeout_s=self._deadline_s)
-        rows = as_list(field(reply, "data", EMBED_PATH), "data")
-        ordered: dict[int, list[float]] = {}
-        for position, row in enumerate(rows):
-            item = as_object(row, "data item")
-            index = item.get("index", position)
-            if isinstance(index, bool) or not isinstance(index, int):
-                raise ModelResponseError("data item index is not an integer")
-            ordered[index] = as_vector(field(item, "embedding", "data item"), "embedding")
-        vectors = [ordered[index] for index in sorted(ordered)]
-        return shape_vectors(self._config, vectors, len(inputs))
+        return embed_over(self._http, self._config, texts, kind, timeout_s=self._deadline_s)
 
 
 class OpenAIAnnotate(_RemoteDevice):
@@ -78,30 +124,15 @@ class OpenAIAnnotate(_RemoteDevice):
     def __init__(self, ctx: BuildContext, settings: OpenAISettings | None = None) -> None:
         self._http = _http(ctx)
         self._model = ctx.models.annotate.model
-        self._deadline_s = ctx.deadline_s
+        self._deadline_s = ctx.annotate_deadline_s
         self._settings = settings or OpenAISettings()
 
     def annotate(
         self, prompt_messages: Sequence[Message], json_schema: Mapping[str, JSON]
     ) -> Mapping[str, JSON]:
-        body: dict[str, JSON] = {
-            "model": self._model,
-            "messages": message_payload(prompt_messages),
-            "temperature": 0,
-            "seed": self._settings.seed,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {"name": SCHEMA_NAME, "strict": True, "schema": dict(json_schema)},
-            },
-        }
+        body = chat_body(self._model, prompt_messages, json_schema, seed=self._settings.seed)
         reply = self._http.post(CHAT_PATH, body, timeout_s=self._deadline_s)
-        choices = as_list(field(reply, "choices", CHAT_PATH), "choices")
-        if not choices:
-            raise ModelResponseError("no choices returned")
-        first = as_object(choices[0], "choice")
-        message = as_object(field(first, "message", "choice"), "message")
-        content = as_str(field(message, "content", "message"), "content")
-        return parse_structured(content, json_schema)
+        return parse_chat(reply, json_schema)
 
 
 def build_openai_embed(ctx: BuildContext) -> EmbedClient:

@@ -22,7 +22,7 @@ def test_full_profile_builds_slots_with_fitted_temperatures(tmp_path: Path) -> N
     config = replace(Config(), models=ModelsConfig(classify=classify))
     path = tmp_path / "cal.json"
     save_calibration(
-        path, Calibration().with_entry(CalibrationKey("m", "b", 1), {"relevance": 2.0})
+        path, Calibration().with_entry(CalibrationKey("m", "b", 2), {"relevance": 2.0})
     )
     slots = eval_models(config, {PROFILE_ENV: FULL_PROFILE, CALIBRATION_FILE_ENV: str(path)})
     assert slots is not None

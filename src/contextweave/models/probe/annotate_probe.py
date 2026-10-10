@@ -1,41 +1,28 @@
 from contextweave.models.errors import ModelParseError
 from contextweave.models.probe.context import ProbeEnv
-from contextweave.models.probe.ollama_tags import TagCatalog
-from contextweave.models.probe.report import Line, Status, missing_summary
+from contextweave.models.probe.report import Line, Status
+from contextweave.models.probe.served import served_lines
 from contextweave.models.probe.timing import rate_per_s, summarize
 from contextweave.models.probe.util import Failure, attempt, gpu_used_mib
 from contextweave.models.prompt_store import PromptError, PromptTemplate, load_prompt
 from contextweave.models.providers import AnnotateClient, Device, Message
 
 PROMPT_NAME = "annotate"
-OLLAMA = "ollama"
 
 
-def probe_annotate(env: ProbeEnv, catalog: TagCatalog | None) -> list[Line]:
-    """Tag presence and annotate rate (chunks/s) per device for the annotate slot."""
+def probe_annotate(env: ProbeEnv) -> list[Line]:
+    """Served model and annotate rate (chunks/s) per device for the annotate slot."""
     config = env.models.annotate
     if config.provider == "none":
         return [Line("annotate", "-", Status.SKIPPED, "provider is none")]
-    lines: list[Line] = []
-    if config.provider == OLLAMA:
-        if catalog is None:
-            return [
-                Line(
-                    "annotate.tag",
-                    "-",
-                    Status.UNAVAILABLE,
-                    f"ollama unreachable at {env.ollama_url}",
-                )
-            ]
-        if not catalog.has(config.model):
-            return [Line("annotate.tag", "-", Status.MISSING, missing_summary(config.model))]
-        lines.append(Line("annotate.tag", "-", Status.OK, f"present: {config.model}"))
+    client = env.slots.clients.annotate
+    devices = _devices(env, client)
+    lines = served_lines("annotate", client, config.model, tuple(devices), env.transport)
     try:
         prompt = load_prompt(PROMPT_NAME, config.prompt_version)
     except PromptError as exc:
         return [*lines, Line("annotate.rate", "-", Status.UNAVAILABLE, str(exc))]
-    client = env.slots.clients.annotate
-    for device in _devices(env, client):
+    for device in devices:
         moved = attempt(lambda device=device: client.set_device(device))
         if isinstance(moved, Failure):
             lines.append(Line("annotate.rate", device.value, Status.UNAVAILABLE, moved.reason))
@@ -86,7 +73,7 @@ def _rate_line(
     latency = summarize(samples)
     total_ms = sum(samples)
     rate = rate_per_s(len(samples), total_ms)
-    deadline = env.configured_deadline_ms
+    deadline = env.configured_annotate_deadline_ms
     over = sum(1 for sample in samples if sample > deadline)
     metrics = {
         "chunks": float(len(samples)),
@@ -103,7 +90,7 @@ def _rate_line(
         metrics["gpu_used_mib"] = gpu_used
     summary = (
         f"{rate:.2f} chunks/s, p50 {latency.p50_ms:.0f} ms, p95 {latency.p95_ms:.0f} ms, "
-        f"{over}/{len(samples)} over deadline_ms {deadline}, {parse_failures} parse failures"
+        f"{over}/{len(samples)} over annotate.deadline_ms {deadline}, {parse_failures} parse failures"
     )
     status = Status.WARN if over or parse_failures else Status.OK
     return Line("annotate.rate", name, status, summary, metrics)

@@ -13,13 +13,16 @@ from contextweave.models.decision import (
     Question,
     QuestionKind,
 )
-from contextweave.models.errors import ModelDeadlineError
+from contextweave.models.device_http import device_table
+from contextweave.models.errors import ModelDeadlineError, ModelTransportError
 from contextweave.models.health import SlotHealth
 from contextweave.models.providers import Device, EmbedKind, ProviderRegistries, Slot
-from contextweave.models.residency import ClassifyBackend, Probe, Profile
+from contextweave.models.residency import Probe, Profile, ServerBackend
 from contextweave.models.slots import Done, ModelSlots, Skipped, default_registries
 
-VECTOR = {"embeddings": [[1.0, 0.0, 0.0]]}
+VECTOR = {"data": [{"index": 0, "embedding": [1.0, 0.0, 0.0]}]}
+GPU_EMBED_PORT = 8770
+CPU_EMBED_PORT = 8771
 
 
 def make(
@@ -70,8 +73,7 @@ def good(request: httpx.Request) -> httpx.Response:
 
 
 def timeout_on_gpu(request: httpx.Request) -> httpx.Response:
-    on_gpu = b'"num_gpu":0' not in request.content
-    if request.url.path == "/api/embed" and on_gpu and b'"input":""' not in request.content:
+    if request.url.port == GPU_EMBED_PORT:
         raise httpx.ReadTimeout("slow", request=request)
     return httpx.Response(200, json=VECTOR)
 
@@ -105,23 +107,20 @@ def test_deadline_miss_marks_down_then_cpu_after_warmup(models: ModelsConfig, cl
     first = embed(slots)
     assert isinstance(first, Skipped)
     assert first.degraded.get("device_tried") == "gpu"
-    assert len(rec.requests) == 3 and health.active is Device.CPU
+    assert len(rec.requests) == 1 and health.active is Device.CPU
     second = embed(slots)
     assert isinstance(second, Done)
-    assert rec.bodies()[-1]["options"] == {"num_gpu": 0}
+    assert rec.requests[-1].url.port == CPU_EMBED_PORT
     assert health.status().down == (Device.GPU,)
 
 
 def test_one_device_per_call(models: ModelsConfig, clock: Clock) -> None:
     def always_fail(request: httpx.Request) -> httpx.Response:
-        if b'"input":[' in request.content:
-            raise httpx.ConnectError("down", request=request)
-        return httpx.Response(200, json=VECTOR)
+        raise httpx.ConnectError("down", request=request)
 
     slots, rec = make(models, clock, always_fail)
     embed(slots)
-    calls = [b for b in rec.bodies() if isinstance(b["input"], list)]
-    assert len(calls) == 1
+    assert len(rec.requests) == 1
 
 
 def test_retry_after_expiry_restores_gpu(models: ModelsConfig, clock: Clock) -> None:
@@ -213,16 +212,24 @@ def test_window_keeps_last_200(clock: Clock) -> None:
     assert health.skip_rate() == 0.0
 
 
-def test_residency_serve_unloads_and_reloads_on_cpu(models: ModelsConfig, clock: Clock) -> None:
-    slots, rec = make(models, clock, good)
+def test_residency_serve_moves_to_cpu_servers_without_model_calls(
+    models: ModelsConfig, clock: Clock
+) -> None:
+    probed: list[str] = []
+
+    def probe(endpoint: str) -> bool:
+        probed.append(endpoint)
+        return True
+
+    slots, rec = make(models, clock, good, probe=probe)
     slots.apply_profile(Profile.BULK)
-    assert rec.requests == []
     slots.apply_profile(Profile.SERVE)
-    bodies = rec.bodies()
-    assert [b.get("keep_alive") for b in bodies if rec.paths()] == [0, "10m", 0, "10m"]
-    assert rec.paths() == ["/api/embed", "/api/embed", "/api/chat", "/api/chat"]
-    assert bodies[1]["options"] == {"num_gpu": 0}
+    assert rec.requests == []
+    assert "http://127.0.0.1:8771" in probed
+    assert "http://127.0.0.1:8773" in probed
+    assert "http://127.0.0.1:8765" in probed
     assert slots.healths[Slot.EMBED].active is Device.CPU
+    assert slots.healths[Slot.CLASSIFY].active is Device.GPU
     assert slots.healths[Slot.ANNOTATE].active is Device.CPU
     slots.apply_profile(Profile.BULK)
     assert slots.healths[Slot.EMBED].active is Device.GPU
@@ -237,9 +244,9 @@ class ChattyDecision(StubDecision):
     def annotate(self) -> None: ...
 
 
-def classify_models(models: ModelsConfig) -> ModelsConfig:
+def classify_models(models: ModelsConfig, provider: str = "systemone") -> ModelsConfig:
     classify = ClassifyConfig(
-        provider="stub",
+        provider=provider,
         gpu=DeviceEndpointConfig("http://gpu", "serve-gpu --port 1"),
         cpu=DeviceEndpointConfig("http://cpu", ""),
     )
@@ -252,36 +259,84 @@ def stub_registries() -> ProviderRegistries:
     return registries
 
 
-def test_classify_profiles_supervise_launch(models: ModelsConfig, clock: Clock) -> None:
-    config = classify_models(models)
-    launcher = FakeLauncher()
-    slots = ModelSlots.from_config(
-        config,
-        registries=stub_registries(),
-        transport=transport_of(recorder(good)),
+def noul_reply(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, json={"answers": {"q": {"type": "noul", "noul": 0.8}}})
+
+
+def supervised(models: ModelsConfig, clock: Clock, launcher: FakeLauncher) -> ModelSlots:
+    return ModelSlots.from_config(
+        models,
+        transport=transport_of(recorder(noul_reply)),
         clock=clock,
         submit=lambda job: job(),
         launcher=launcher,
         probe=lambda endpoint: True,
     )
+
+
+def test_classify_profiles_supervise_launch(models: ModelsConfig, clock: Clock) -> None:
+    launcher = FakeLauncher()
+    slots = supervised(classify_models(models), clock, launcher)
     health = slots.healths[Slot.CLASSIFY]
     slots.apply_profile(Profile.SERVE)
     assert [h.command for h in launcher.started] == ["serve-gpu --port 1"]
     assert health.active is Device.GPU
-    question = Question("q", "t", QuestionKind.BINARY, ("yes", "no"))
-    result = slots.call(Slot.CLASSIFY, lambda: slots.clients.decision.decide(["s"], [question]))
+    question = Question("q", "t", QuestionKind.NOUL, ("yes", "no"))
+    result = slots.ask(["s"], [question], stage="gate")
     assert isinstance(result, Done)
     slots.apply_profile(Profile.BULK)
     assert launcher.started[0].running is False
-    stopped = slots.call(Slot.CLASSIFY, lambda: slots.clients.decision.decide(["s"], [question]))
+    stopped = slots.ask(["s"], [question], stage="gate")
     assert isinstance(stopped, Skipped)
     assert "residency" in stopped.degraded["reason"]
 
 
+def test_warm_stops_other_device_process(models: ModelsConfig, clock: Clock) -> None:
+    embed_config = dataclasses.replace(
+        models.embed,
+        gpu=DeviceEndpointConfig("http://127.0.0.1:8770", "embed-gpu"),
+        cpu=DeviceEndpointConfig("http://127.0.0.1:8771", "embed-cpu"),
+    )
+    launcher = FakeLauncher()
+    slots = supervised(dataclasses.replace(models, embed=embed_config), clock, launcher)
+    health = slots.healths[Slot.EMBED]
+    assert health.activate(Device.CPU)
+    health.activate(Device.GPU)
+    gpu_started = [h for h in launcher.started if h.command == "embed-gpu"]
+    health.activate(Device.CPU)
+    assert gpu_started and gpu_started[0].running is False
+    assert [h.command for h in launcher.started if h.running] == ["embed-cpu"]
+
+
+def test_unsupervised_classify_stub_is_never_probed(models: ModelsConfig, clock: Clock) -> None:
+    probed: list[str] = []
+
+    def probe(endpoint: str) -> bool:
+        probed.append(endpoint)
+        return True
+
+    launcher = FakeLauncher()
+    slots = ModelSlots.from_config(
+        classify_models(models, "stub"),
+        registries=stub_registries(),
+        transport=transport_of(recorder(good)),
+        clock=clock,
+        submit=lambda job: job(),
+        launcher=launcher,
+        probe=probe,
+    )
+    slots.apply_profile(Profile.SERVE)
+    assert launcher.started == []
+    assert "http://gpu" not in probed
+    assert slots.healths[Slot.CLASSIFY].active is Device.GPU
+
+
 def test_external_classify_endpoint_only_health_checked(models: ModelsConfig, clock: Clock) -> None:
     launcher = FakeLauncher()
-    backend = ClassifyBackend(
-        ClassifyConfig(),
+    config = ClassifyConfig()
+    backend = ServerBackend(
+        Slot.CLASSIFY,
+        device_table(config.gpu, config.cpu),
         launcher,
         lambda endpoint: False,
         clock=clock,
@@ -295,7 +350,7 @@ def test_external_classify_endpoint_only_health_checked(models: ModelsConfig, cl
 
 def test_classify_slot_rejects_non_decision_provider(models: ModelsConfig, clock: Clock) -> None:
     config = dataclasses.replace(
-        models, classify=dataclasses.replace(models.classify, provider="ollama")
+        models, classify=dataclasses.replace(models.classify, provider="llama_server")
     )
     slots, _ = make(config, clock, good)
     assert any("classify" in issue for issue in slots.issues)
@@ -316,3 +371,34 @@ def test_unknown_embed_provider_disables_slot(models: ModelsConfig, clock: Clock
     slots, _ = make(config, clock, good)
     assert isinstance(embed(slots), Skipped)
     assert slots.issues
+
+
+def test_annotate_slot_uses_its_own_deadline(models: ModelsConfig, clock: Clock) -> None:
+    slots, _ = make(models, clock, good)
+
+    def slow() -> str:
+        clock.advance(10)
+        return "late"
+
+    assert isinstance(slots.call(Slot.ANNOTATE, slow), Done)
+    assert isinstance(slots.call(Slot.EMBED, slow), Skipped)
+
+
+def test_external_endpoint_is_probed_once(models: ModelsConfig, clock: Clock) -> None:
+    probed: list[str] = []
+
+    def probe(endpoint: str) -> bool:
+        probed.append(endpoint)
+        return False
+
+    backend = ServerBackend(
+        Slot.EMBED,
+        device_table(models.embed.gpu, models.embed.cpu),
+        FakeLauncher(),
+        probe,
+        clock=clock,
+        sleep=lambda seconds: None,
+    )
+    with pytest.raises(ModelTransportError):
+        backend.warm(Device.CPU)
+    assert probed == ["http://127.0.0.1:8771"]

@@ -9,23 +9,35 @@ from contextweave.models.errors import ModelDisabledError, ModelResponseError, P
 CHAT_ATTRIBUTES = ("annotate", "embed", "chat")
 YES = "yes"
 NO = "no"
-BINARY_OPTIONS = (YES, NO)
-SCORE_OPTIONS = ("0", "0.25", "0.5", "0.75", "1")
-SCORE_VALUES = tuple(float(option) for option in SCORE_OPTIONS)
+NOUL_OPTIONS = (YES, NO)
+CHOICE_OPTION_LIMIT = 26
+SCORE_LEVELS = (2, 10)
 
 
 class QuestionKind(StrEnum):
     CHOICE = "choice"
     SCORE = "score"
-    BINARY = "binary"
+    NOUL = "noul"
 
 
 @dataclass(frozen=True, slots=True)
 class Question:
+    """One typed question; descriptions run parallel to options and become the wire criteria."""
+
     name: str
     text: str
     kind: QuestionKind
     options: tuple[str, ...]
+    descriptions: tuple[str, ...] = ()
+
+    def description(self, index: int) -> str:
+        """The option's description, or its label when none is declared."""
+        return self.descriptions[index] if index < len(self.descriptions) else self.options[index]
+
+    def level_values(self) -> tuple[float, ...]:
+        """Score level values spread evenly over [0, 1], lowest level first."""
+        last = len(self.options) - 1
+        return tuple(index / last for index in range(len(self.options)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,14 +49,8 @@ class Decision:
 
 
 def kind_options(kind: QuestionKind, declared: Sequence[str]) -> tuple[str, ...]:
-    """Fixed options of binary and score questions; choice options are as declared."""
-    match kind:
-        case QuestionKind.BINARY:
-            return BINARY_OPTIONS
-        case QuestionKind.SCORE:
-            return SCORE_OPTIONS
-        case QuestionKind.CHOICE:
-            return tuple(declared)
+    """Fixed options of noul questions; choice options and score levels are as declared."""
+    return NOUL_OPTIONS if kind is QuestionKind.NOUL else tuple(declared)
 
 
 def decision_of(question: Question, probs: Mapping[str, float]) -> Decision:
@@ -60,17 +66,22 @@ def decision_of(question: Question, probs: Mapping[str, float]) -> Decision:
     return Decision(question.name, normalised, top, normalised[top])
 
 
-def score_distribution(value: float) -> dict[str, float]:
-    """Two-point distribution over the score grid whose expected value is value."""
+def score_distribution(levels: Sequence[str], value: float) -> dict[str, float]:
+    """Two-point distribution over evenly spaced levels whose expected value is value."""
     clipped = min(max(value, 0.0), 1.0)
-    last = len(SCORE_VALUES) - 1
+    last = len(levels) - 1
     low = min(int(clipped * last), last - 1)
-    span = SCORE_VALUES[low + 1] - SCORE_VALUES[low]
-    upper = (clipped - SCORE_VALUES[low]) / span
+    upper = clipped * last - low
     return {
-        option: ({low: 1 - upper, low + 1: upper}).get(index, 0.0)
-        for index, option in enumerate(SCORE_OPTIONS)
+        level: ({low: 1 - upper, low + 1: upper}).get(index, 0.0)
+        for index, level in enumerate(levels)
     }
+
+
+def noul_distribution(yes: float) -> dict[str, float]:
+    """Yes/no distribution from a noul probability."""
+    clipped = min(max(yes, 0.0), 1.0)
+    return {YES: clipped, NO: 1 - clipped}
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,14 +93,15 @@ class Answers:
     temperatures: Mapping[str, float]
 
     def value(self, name: str) -> float:
-        """Binary yes-probability or score expected value, temperature-calibrated."""
+        """Noul yes-probability or score expected value, temperature-calibrated."""
         question, decision = self.questions[name], self.decisions[name]
         match question.kind:
-            case QuestionKind.BINARY:
+            case QuestionKind.NOUL:
                 raw = decision.probs[YES]
             case QuestionKind.SCORE:
                 raw = sum(
-                    decision.probs[o] * v for o, v in zip(SCORE_OPTIONS, SCORE_VALUES, strict=True)
+                    decision.probs[level] * value
+                    for level, value in zip(question.options, question.level_values(), strict=True)
                 )
             case QuestionKind.CHOICE:
                 raise ValueError(f"question '{name}' is a choice; use prob() or top()")

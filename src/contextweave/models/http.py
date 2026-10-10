@@ -29,13 +29,17 @@ class JsonClient:
             raise ModelDeadlineError(f"{path} exceeded {timeout_s:.3f}s") from exc
         except httpx.HTTPError as exc:
             raise ModelTransportError(f"{path}: {exc}") from exc
-        if response.status_code >= 400:
-            raise ModelTransportError(f"{path} returned {response.status_code}")
+        return self._decode(path, response)
+
+    def get(self, path: str, *, timeout_s: float) -> dict[str, JSON]:
+        """GET a path and return the validated JSON object response."""
         try:
-            decoded: object = response.json()
-        except ValueError as exc:
-            raise ModelResponseError(f"{path}: invalid JSON body") from exc
-        return as_object(to_json(decoded), path)
+            response = self._client.get(path, timeout=timeout_s)
+        except httpx.TimeoutException as exc:
+            raise ModelDeadlineError(f"{path} exceeded {timeout_s:.3f}s") from exc
+        except httpx.HTTPError as exc:
+            raise ModelTransportError(f"{path}: {exc}") from exc
+        return self._decode(path, response)
 
     def reachable(self, path: str, *, timeout_s: float) -> bool:
         """True when a GET answers at all."""
@@ -44,3 +48,12 @@ class JsonClient:
         except httpx.HTTPError:
             return False
         return True
+
+    def _decode(self, path: str, response: httpx.Response) -> dict[str, JSON]:
+        if response.status_code >= 400:
+            raise ModelTransportError(f"{path} returned {response.status_code}")
+        try:
+            decoded: object = response.json()
+        except ValueError as exc:
+            raise ModelResponseError(f"{path}: invalid JSON body") from exc
+        return as_object(to_json(decoded), path)

@@ -55,16 +55,16 @@ def test_cli_probe_bad_candidate_is_usage_error(
     assert "candidate" in capsys.readouterr().err
 
 
-def test_cli_probe_table_for_missing_ollama(
+def test_cli_probe_table_for_unreachable_llama_server(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    env = cli_env(tmp_path) | {"CW_MODELS__EMBED__PROVIDER": "ollama"}
-    code = main(
-        ["models", "probe", "--slot", "embed", "--ollama-url", "http://127.0.0.1:9"],
-        env=env,
-        cwd=tmp_path,
-    )
+    env = cli_env(tmp_path) | {
+        "CW_MODELS__EMBED__PROVIDER": "llama_server",
+        "CW_MODELS__EMBED__DEVICES": '["cpu"]',
+        "CW_MODELS__EMBED__CPU__ENDPOINT": "http://127.0.0.1:9",
+    }
+    code = main(["models", "probe", "--slot", "embed"], env=env, cwd=tmp_path)
     out = capsys.readouterr().out
     assert code == 1
-    assert "embed.tag" in out
+    assert "embed.served" in out
     assert "unavailable" in out

@@ -1,4 +1,5 @@
 import math
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -19,8 +20,8 @@ from contextweave.models.errors import (
     ModelTransportError,
     ProviderSlotError,
 )
+from contextweave.models.llama_server import LlamaAnnotate, LlamaEmbed
 from contextweave.models.null import NullAnnotate, NullEmbed
-from contextweave.models.ollama import OllamaAnnotate, OllamaEmbed
 from contextweave.models.openai_compat import OpenAIAnnotate, OpenAIEmbed
 from contextweave.models.prompt_store import PromptError, load_prompt
 from contextweave.models.providers import (
@@ -29,6 +30,7 @@ from contextweave.models.providers import (
     EmbedKind,
     Endpoints,
     Message,
+    Supervised,
 )
 
 SCHEMA: dict[str, JSON] = {"type": "object", "required": ["purpose", "tags"]}
@@ -43,44 +45,49 @@ def ctx_of(models: ModelsConfig, rec: Recorder) -> BuildContext:
     return BuildContext(models, Endpoints(openai_api_key="k"), transport_of(rec))
 
 
-def test_ollama_embed_request_prefix_and_truncation(models: ModelsConfig) -> None:
-    rec = recorder(lambda r: ok({"embeddings": [[3.0, 4.0, 12.0, 99.0]]}))
-    client = OllamaEmbed(ctx_of(models, rec))
+def embeddings(*rows: list[float]) -> dict[str, object]:
+    return {"data": [{"index": index, "embedding": row} for index, row in enumerate(rows)]}
+
+
+def test_llama_embed_request_prefix_and_truncation(models: ModelsConfig) -> None:
+    rec = recorder(lambda r: ok(embeddings([3.0, 4.0, 12.0, 99.0])))
+    client = LlamaEmbed(ctx_of(models, rec))
     out = client.embed(["x"], kind=EmbedKind.QUERY)
     body = rec.bodies()[0]
-    assert rec.paths() == ["/api/embed"]
-    assert body["input"] == ["Q:x"]
-    assert body["model"] == models.embed.model
-    assert body["options"] == {"num_gpu": 999}
+    assert [str(request.url) for request in rec.requests] == ["http://127.0.0.1:8770/v1/embeddings"]
+    assert body == {"model": models.embed.model, "input": ["Q:x"]}
     assert len(out[0]) == 3
     assert math.isclose(sum(v * v for v in out[0]), 1.0)
 
 
 def test_embed_kinds_use_their_prefix(models: ModelsConfig) -> None:
-    rec = recorder(lambda r: ok({"embeddings": [[1.0, 0.0, 0.0]]}))
-    client = OllamaEmbed(ctx_of(models, rec))
+    rec = recorder(lambda r: ok(embeddings([1.0, 0.0, 0.0])))
+    client = LlamaEmbed(ctx_of(models, rec))
     client.embed(["a"], kind=EmbedKind.DOC)
     client.embed(["a"], kind=EmbedKind.MEMORY)
     assert [b["input"] for b in rec.bodies()] == [["D:a"], ["M:a"]]
 
 
 def test_embed_short_vector_is_error(models: ModelsConfig) -> None:
-    rec = recorder(lambda r: ok({"embeddings": [[1.0, 0.0]]}))
+    rec = recorder(lambda r: ok(embeddings([1.0, 0.0])))
     with pytest.raises(Exception, match="below configured"):
-        OllamaEmbed(ctx_of(models, rec)).embed(["a"], kind=EmbedKind.DOC)
+        LlamaEmbed(ctx_of(models, rec)).embed(["a"], kind=EmbedKind.DOC)
 
 
-def test_ollama_chat_request_shape(models: ModelsConfig) -> None:
-    rec = recorder(lambda r: ok({"message": {"content": '{"purpose": "p", "tags": []}'}}))
-    client = OllamaAnnotate(ctx_of(models, rec))
-    result = client.annotate(MESSAGES, SCHEMA)
+def test_llama_chat_request_shape(models: ModelsConfig) -> None:
+    payload = {"choices": [{"message": {"content": '{"purpose": "p", "tags": []}'}}]}
+    rec = recorder(lambda r: ok(payload))
+    result = LlamaAnnotate(ctx_of(models, rec)).annotate(MESSAGES, SCHEMA)
     body = rec.bodies()[0]
-    assert rec.paths() == ["/api/chat"]
+    assert rec.paths() == ["/v1/chat/completions"]
+    assert rec.requests[0].url.port == 8772
     assert result == {"purpose": "p", "tags": []}
-    assert body["format"] == SCHEMA
-    assert body["think"] is True
-    assert body["stream"] is False
-    assert body["options"] == {"temperature": 0, "seed": 7, "num_gpu": 999}
+    assert body["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "annotation", "strict": True, "schema": SCHEMA},
+    }
+    assert body["chat_template_kwargs"] == {"enable_thinking": True}
+    assert (body["temperature"], body["seed"]) == (0, 7)
     assert body["messages"] == [
         {"role": "system", "content": "s"},
         {"role": "user", "content": "u"},
@@ -89,39 +96,40 @@ def test_ollama_chat_request_shape(models: ModelsConfig) -> None:
 
 @pytest.mark.parametrize("content", ["not json", "[1]", '{"purpose": "p"}'])
 def test_annotate_parse_failure_is_typed(models: ModelsConfig, content: str) -> None:
-    rec = recorder(lambda r: ok({"message": {"content": content}}))
+    rec = recorder(lambda r: ok({"choices": [{"message": {"content": content}}]}))
     with pytest.raises(ModelParseError):
-        OllamaAnnotate(ctx_of(models, rec)).annotate(MESSAGES, SCHEMA)
+        LlamaAnnotate(ctx_of(models, rec)).annotate(MESSAGES, SCHEMA)
 
 
-def test_ollama_set_device_unloads_then_reloads(models: ModelsConfig) -> None:
-    rec = recorder(lambda r: ok({"embeddings": []}))
-    client = OllamaEmbed(ctx_of(models, rec))
+def test_llama_set_device_switches_server_without_requests(models: ModelsConfig) -> None:
+    rec = recorder(lambda r: ok(embeddings([1.0, 0.0, 0.0])))
+    client = LlamaEmbed(ctx_of(models, rec))
     client.set_device(Device.CPU)
-    first, second = rec.bodies()
-    assert first["keep_alive"] == 0
-    assert "options" not in first
-    assert second["options"] == {"num_gpu": 0}
-    assert second["keep_alive"] != 0
-    client.set_device(Device.CPU)
-    assert len(rec.requests) == 2
+    assert rec.requests == []
+    client.embed(["a"], kind=EmbedKind.DOC)
+    assert rec.requests[0].url.port == 8771
+    assert client.device is Device.CPU
 
 
-def test_ollama_annotate_cpu_after_move(models: ModelsConfig) -> None:
-    rec = recorder(lambda r: ok({"message": {"content": '{"purpose": "p", "tags": []}'}}))
-    client = OllamaAnnotate(ctx_of(models, rec))
-    client.set_device(Device.CPU)
-    client.annotate(MESSAGES, SCHEMA)
-    unload, reload, call = rec.bodies()
-    assert unload["keep_alive"] == 0
-    assert reload["options"] == {"num_gpu": 0}
-    assert call["options"] == {"temperature": 0, "seed": 7, "num_gpu": 0}
+def test_llama_servers_follow_configured_devices(models: ModelsConfig) -> None:
+    cpu_only = replace(models, embed=replace(models.embed, devices=("cpu",)))
+    client = LlamaEmbed(ctx_of(cpu_only, recorder(lambda r: ok({}))))
+    assert client.devices == (Device.CPU,)
+    assert set(client.servers) == {Device.CPU}
+    assert isinstance(client, Supervised)
 
 
-def test_ollama_rejects_remote_device(models: ModelsConfig) -> None:
+def test_llama_rejects_remote_device(models: ModelsConfig) -> None:
     rec = recorder(lambda r: ok({}))
     with pytest.raises(ProviderSlotError):
-        OllamaEmbed(ctx_of(models, rec)).set_device(Device.REMOTE)
+        LlamaEmbed(ctx_of(models, rec)).set_device(Device.REMOTE)
+
+
+def test_annotate_uses_annotate_deadline(models: ModelsConfig) -> None:
+    payload = {"choices": [{"message": {"content": '{"purpose": "p", "tags": []}'}}]}
+    rec = recorder(lambda r: ok(payload))
+    LlamaAnnotate(ctx_of(models, rec)).annotate(MESSAGES, SCHEMA)
+    assert rec.requests[0].extensions["timeout"]["read"] == models.annotate.deadline_ms / 1000
 
 
 def test_openai_embed_shape_and_ordering(models: ModelsConfig) -> None:
@@ -160,19 +168,19 @@ def test_timeout_maps_to_deadline_error(models: ModelsConfig) -> None:
         raise httpx.ReadTimeout("slow", request=request)
 
     with pytest.raises(ModelDeadlineError):
-        OllamaEmbed(ctx_of(models, recorder(boom))).embed(["a"], kind=EmbedKind.DOC)
+        LlamaEmbed(ctx_of(models, recorder(boom))).embed(["a"], kind=EmbedKind.DOC)
 
 
 def test_deadline_is_http_timeout(models: ModelsConfig) -> None:
-    rec = recorder(lambda r: ok({"embeddings": [[1.0, 0.0, 0.0]]}))
-    OllamaEmbed(ctx_of(models, rec)).embed(["a"], kind=EmbedKind.DOC)
+    rec = recorder(lambda r: ok(embeddings([1.0, 0.0, 0.0])))
+    LlamaEmbed(ctx_of(models, rec)).embed(["a"], kind=EmbedKind.DOC)
     assert rec.requests[0].extensions["timeout"]["read"] == models.deadline_ms / 1000
 
 
 def test_error_status_is_transport_error(models: ModelsConfig) -> None:
     rec = recorder(lambda r: httpx.Response(500))
     with pytest.raises(ModelTransportError):
-        OllamaEmbed(ctx_of(models, rec)).embed(["a"], kind=EmbedKind.DOC)
+        LlamaEmbed(ctx_of(models, rec)).embed(["a"], kind=EmbedKind.DOC)
 
 
 def test_null_providers_raise_disabled() -> None:
@@ -181,11 +189,11 @@ def test_null_providers_raise_disabled() -> None:
     with pytest.raises(ModelDisabledError):
         NullAnnotate().annotate(MESSAGES, SCHEMA)
     with pytest.raises(ModelDisabledError):
-        NullDecisionClient().decide(["s"], [Question("q", "t", QuestionKind.BINARY, ("yes", "no"))])
+        NullDecisionClient().decide(["s"], [Question("q", "t", QuestionKind.NOUL, ("yes", "no"))])
 
 
 def test_classify_rejects_chat_client(models: ModelsConfig) -> None:
-    chat = OllamaAnnotate(ctx_of(models, recorder(lambda r: ok({}))))
+    chat = LlamaAnnotate(ctx_of(models, recorder(lambda r: ok({}))))
     with pytest.raises(ProviderSlotError):
         ensure_decision_client(chat)
     assert isinstance(ensure_decision_client(NullDecisionClient()), NullDecisionClient)

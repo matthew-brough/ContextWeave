@@ -43,9 +43,7 @@ def evaluate(
         Criterion(
             "quality", Verdict.PENDING, "top agreement >= 95%, recall drop <= 2 pts: T20 eval"
         ),
-        Criterion(
-            "calibration", Verdict.PENDING, "ECE <= 0.05 per binary/score question: T20 eval"
-        ),
+        Criterion("calibration", Verdict.PENDING, "ECE <= 0.05 per noul/score question: T20 eval"),
     )
 
 

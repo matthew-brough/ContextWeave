@@ -9,6 +9,8 @@ MODEL_ENV = "CW_MODELS__CLASSIFY__MODEL"
 BUILD_ENV = "CW_MODELS__CLASSIFY__BUILD_ID"
 DEVICE_CHOICES = ("auto", "gpu", "cpu")
 SKIP_PROVIDER = "none"
+SYSTEMONE = "systemone"
+CLEF_MODEL = "bartowski/Clef-flash-GGUF:Q4_K_M"
 VARIANT_PROFILE = "full"
 
 
@@ -36,11 +38,14 @@ def devices_literal(device: str) -> str:
     return '["gpu", "cpu"]' if device == "auto" else f'["{device}"]'
 
 
-def provider_env(provider: str) -> Callable[[VariantOptions], Mapping[str, str]]:
+def provider_env(
+    provider: str, default_model: str | None = None
+) -> Callable[[VariantOptions], Mapping[str, str]]:
     def build(options: VariantOptions) -> Mapping[str, str]:
         env = {PROVIDER_ENV: provider, DEVICES_ENV: devices_literal(options.device)}
-        if options.model is not None:
-            env[MODEL_ENV] = options.model
+        model = options.model or default_model
+        if model is not None:
+            env[MODEL_ENV] = model
         if options.build_id is not None:
             env[BUILD_ENV] = options.build_id
         return env
@@ -53,9 +58,9 @@ def skip_env(options: VariantOptions) -> Mapping[str, str]:
 
 
 def default_variants() -> Registry[str, Variant]:
-    """Registry holding kev, clef and skip."""
+    """Registry holding kev and clef (both over systemone) and skip."""
     registry: Registry[str, Variant] = Registry()
-    registry.register("kev", Variant("kev", provider_env("kev")))
-    registry.register("clef", Variant("clef", provider_env("clef")))
+    registry.register("kev", Variant("kev", provider_env(SYSTEMONE)))
+    registry.register("clef", Variant("clef", provider_env(SYSTEMONE, CLEF_MODEL)))
     registry.register("skip", Variant("skip", skip_env))
     return registry

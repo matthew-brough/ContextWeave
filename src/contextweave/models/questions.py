@@ -6,17 +6,23 @@ from pathlib import Path
 
 from contextweave.core.registry import Registry, UnknownKeyError
 from contextweave.core.types import JSON
-from contextweave.models.decision import Question, QuestionKind, kind_options
+from contextweave.models.decision import (
+    CHOICE_OPTION_LIMIT,
+    SCORE_LEVELS,
+    Question,
+    QuestionKind,
+    kind_options,
+)
 from contextweave.models.errors import ModelError
 from contextweave.models.wire import to_json
 
 QUESTIONS_DIR = Path(__file__).parent / "questions"
-SCOPE_DIR_LIMIT = 30
+OPTION_PLACEHOLDER = "{option}"
 
 type OptionSource = Callable[[Sequence[str]], tuple[str, ...]]
 
 OPTION_SOURCES: Registry[str, OptionSource] = Registry()
-OPTION_SOURCES.register("scope_dirs", lambda values: tuple(values[:SCOPE_DIR_LIMIT]))
+OPTION_SOURCES.register("scope_dirs", lambda values: tuple(values))
 
 
 class QuestionSetError(ModelError):
@@ -31,7 +37,9 @@ class QuestionTemplate:
     text: str
     kind: QuestionKind
     options: tuple[str, ...]
-    options_from: str | None
+    descriptions: tuple[str, ...]
+    options_from: str | None = None
+    option_description: str = OPTION_PLACEHOLDER
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,40 +53,83 @@ class QuestionSet:
     def build(self, dynamic: Mapping[str, Sequence[str]] | None = None) -> tuple[Question, ...]:
         """Questions with option sources resolved against the query-time values."""
         values = dynamic or {}
-        questions: list[Question] = []
-        for template in self.templates:
-            options = template.options
-            if template.options_from is not None:
-                try:
-                    source = OPTION_SOURCES.get(template.options_from)
-                except UnknownKeyError as exc:
-                    raise QuestionSetError(f"unknown option source: {exc}") from exc
-                options = (*options, *source(values.get(template.options_from, ())))
-            questions.append(Question(template.name, template.text, template.kind, options))
-        return tuple(questions)
+        return tuple(_resolve(template, values) for template in self.templates)
+
+
+def _resolve(template: QuestionTemplate, values: Mapping[str, Sequence[str]]) -> Question:
+    options, descriptions = list(template.options), list(template.descriptions)
+    if template.options_from is not None:
+        try:
+            source = OPTION_SOURCES.get(template.options_from)
+        except UnknownKeyError as exc:
+            raise QuestionSetError(f"unknown option source: {exc}") from exc
+        for option in source(values.get(template.options_from, ())):
+            if option not in options:
+                options.append(option)
+                descriptions.append(template.option_description.replace(OPTION_PLACEHOLDER, option))
+    return Question(
+        template.name,
+        template.text,
+        template.kind,
+        tuple(options[:CHOICE_OPTION_LIMIT]),
+        tuple(descriptions[:CHOICE_OPTION_LIMIT]),
+    )
+
+
+def _criteria(name: str, raw: JSON) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    if not isinstance(raw, list):
+        raise QuestionSetError(f"question '{name}' criteria must be a list")
+    labels: list[str] = []
+    descriptions: list[str] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise QuestionSetError(f"question '{name}' criteria entries must be tables")
+        label, description = entry.get("label"), entry.get("description")
+        if not (isinstance(label, str) and isinstance(description, str)):
+            raise QuestionSetError(f"question '{name}' criteria need label and description")
+        labels.append(label)
+        descriptions.append(description)
+    if len(set(labels)) != len(labels):
+        raise QuestionSetError(f"question '{name}' has duplicate criteria labels")
+    return tuple(labels), tuple(descriptions)
+
+
+def _check_counts(name: str, kind: QuestionKind, count: int, dynamic: bool) -> None:
+    match kind:
+        case QuestionKind.NOUL:
+            if count:
+                raise QuestionSetError(f"noul question '{name}' takes no criteria")
+        case QuestionKind.SCORE:
+            low, high = SCORE_LEVELS
+            if not low <= count <= high:
+                raise QuestionSetError(f"score question '{name}' needs {low}-{high} levels")
+        case QuestionKind.CHOICE:
+            if count > CHOICE_OPTION_LIMIT or (count < 2 and not dynamic):
+                raise QuestionSetError(
+                    f"choice question '{name}' needs 2-{CHOICE_OPTION_LIMIT} options"
+                )
 
 
 def _template(raw: JSON) -> QuestionTemplate:
     if not isinstance(raw, dict):
         raise QuestionSetError("question entry is not a table")
     name, text, kind = raw.get("name"), raw.get("text"), raw.get("kind")
-    options, source = raw.get("options", []), raw.get("options_from")
+    source, described = raw.get("options_from"), raw.get("option_description", OPTION_PLACEHOLDER)
     if not (isinstance(name, str) and isinstance(text, str) and isinstance(kind, str)):
         raise QuestionSetError("question needs name, text and kind")
-    if not isinstance(options, list):
-        raise QuestionSetError(f"question '{name}' options must be a list")
-    declared = tuple(option for option in options if isinstance(option, str))
-    if len(declared) != len(options):
-        raise QuestionSetError(f"question '{name}' options must be strings")
     if source is not None and not isinstance(source, str):
         raise QuestionSetError(f"question '{name}' options_from must be a string")
+    if not isinstance(described, str):
+        raise QuestionSetError(f"question '{name}' option_description must be a string")
     try:
         question_kind = QuestionKind(kind)
     except ValueError as exc:
         raise QuestionSetError(f"question '{name}' has unknown kind '{kind}'") from exc
-    return QuestionTemplate(
-        name, text, question_kind, kind_options(question_kind, declared), source
-    )
+    labels, descriptions = _criteria(name, raw.get("criteria", []))
+    _check_counts(name, question_kind, len(labels), source is not None)
+    if question_kind is QuestionKind.NOUL:
+        return QuestionTemplate(name, text, question_kind, kind_options(question_kind, ()), ())
+    return QuestionTemplate(name, text, question_kind, labels, descriptions, source, described)
 
 
 @cache

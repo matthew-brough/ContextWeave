@@ -34,8 +34,8 @@ def test_defaults_match_spec(tmp_path: Path, xdg: dict[str, str]) -> None:
     config = load_config(tmp_path, env=xdg, strict=True).config
     assert (config.chunk.max_tokens, config.chunk.min_tokens) == (800, 40)
     assert config.fuse.keep == 100
-    assert (config.gate.window, config.gate.expand_window) == (30, 20)
-    assert (config.gate.card_tokens, config.gate.critical) == (256, 0.8)
+    assert (config.gate.window, config.gate.expand_window) == (8, 8)
+    assert (config.gate.card_tokens, config.gate.critical) == (128, 0.8)
     assert (config.expand.min_score, config.expand.max_depth) == (0.6, 2)
     assert config.coverage.max_iterations == 2
     assert config.budget.default_max_tokens == 4000
@@ -53,7 +53,10 @@ def test_defaults_match_spec(tmp_path: Path, xdg: dict[str, str]) -> None:
     assert config.hooks.session_start_tokens == 400
     assert config.models.deadline_ms == 1500
     assert config.models.embed.dim == 1536
-    assert config.models.classify.devices == ("gpu", "cpu")
+    assert config.models.classify.devices == ("gpu",)
+    assert config.models.classify.model == "kev-latest"
+    assert config.models.classify.build_id == "kev-4b-int8-emb8"
+    assert config.models.classify.parallel == 8
     assert config.models.classify.gpu.endpoint == "http://127.0.0.1:8765"
     assert config.models.classify.cpu.endpoint == "http://127.0.0.1:8766"
     assert "TriggerClientEvent" in config.edges.events.emitters

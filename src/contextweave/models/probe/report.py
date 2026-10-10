@@ -50,8 +50,8 @@ class ProbeReport:
         return 0 if self.probed else 1
 
 
-def missing_summary(tag: str) -> str:
-    return f"missing: {tag} (run `ollama pull {tag}` yourself)"
+def missing_summary(model: str) -> str:
+    return f"start llama-server for {model} per docs/runbooks/model-probe.md yourself"
 
 
 def line_json(line: Line) -> dict[str, JSON]:

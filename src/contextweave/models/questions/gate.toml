@@ -1,22 +1,42 @@
-question_set_version = 1
+question_set_version = 2
 
 [[question]]
 name = "answers_query"
 text = "Does this code directly answer the query?"
-kind = "binary"
+kind = "noul"
 
 [[question]]
 name = "relevance"
 text = "How relevant is this code to the query?"
 kind = "score"
+criteria = [
+  { label = "off_topic", description = "Off-topic: the code has nothing to do with the query." },
+  { label = "related", description = "Related: same area or vocabulary, but it does not help answer the query." },
+  { label = "partial", description = "Partly relevant: covers part of what the query asks, or is needed alongside other code." },
+  { label = "full", description = "Fully relevant: this is the code the query is asking about." },
+]
 
 [[question]]
 name = "role"
 text = "What role does this code play with respect to the query?"
 kind = "choice"
-options = ["implementation", "interface", "caller", "test", "config", "boilerplate", "unrelated"]
+criteria = [
+  { label = "implementation", description = "Implements the behaviour the query asks about." },
+  { label = "interface", description = "Declares the types, signatures or protocol the behaviour is built on." },
+  { label = "caller", description = "Uses or invokes the behaviour the query asks about." },
+  { label = "test", description = "Tests the behaviour the query asks about." },
+  { label = "config", description = "Configures or wires up the behaviour the query asks about." },
+  { label = "boilerplate", description = "Generic glue, imports or scaffolding with no specific bearing on the query." },
+  { label = "unrelated", description = "Plays no part in what the query asks about." },
+]
 
 [[question]]
 name = "structural_value"
 text = "How much does this code's position in the codebase structure help explain the query?"
 kind = "score"
+criteria = [
+  { label = "none", description = "None: its place in the structure says nothing about the query." },
+  { label = "some", description = "Some: it shows a neighbouring module or a distant connection." },
+  { label = "useful", description = "Useful: it links directly to the code that answers the query." },
+  { label = "essential", description = "Essential: the query cannot be understood without seeing where this sits." },
+]

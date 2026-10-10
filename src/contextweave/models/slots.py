@@ -10,7 +10,6 @@ from contextweave.core.errors import DegradedEntry
 from contextweave.core.registry import UnknownKeyError
 from contextweave.core.types import JSON
 from contextweave.models.calibration import Calibration, CalibrationKey
-from contextweave.models.clef import build_clef
 from contextweave.models.decision import (
     Answers,
     DecisionClient,
@@ -27,9 +26,8 @@ from contextweave.models.errors import (
     ProviderSlotError,
 )
 from contextweave.models.health import Clock, HealthStatus, SlotHealth, Submit
-from contextweave.models.kev import build_kev
+from contextweave.models.llama_server import build_llama_annotate, build_llama_embed
 from contextweave.models.null import NONE_CHAIN, build_null_annotate, build_null_embed
-from contextweave.models.ollama import build_ollama_annotate, build_ollama_embed
 from contextweave.models.openai_compat import build_openai_annotate, build_openai_embed
 from contextweave.models.providers import (
     AnnotateClient,
@@ -42,18 +40,22 @@ from contextweave.models.providers import (
     Provider,
     ProviderRegistries,
     Slot,
+    Supervised,
 )
 from contextweave.models.residency import (
-    ClassifyBackend,
     Probe,
     ProcessLauncher,
     Profile,
     Residency,
+    ServerBackend,
     SubprocessLauncher,
     http_probe,
 )
+from contextweave.models.systemone import build_systemone
 
 NONE = "none"
+LLAMA_SERVER = "llama_server"
+SYSTEMONE = "systemone"
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,14 +74,13 @@ type Outcome[T] = Done[T] | Skipped
 def default_registries() -> ProviderRegistries:
     """Registries with the built-in providers."""
     registries = ProviderRegistries()
-    registries.embed.register("ollama", build_ollama_embed)
+    registries.embed.register(LLAMA_SERVER, build_llama_embed)
     registries.embed.register("openai_compat", build_openai_embed)
     registries.embed.register(NONE, build_null_embed)
-    registries.annotate.register("ollama", build_ollama_annotate)
+    registries.annotate.register(LLAMA_SERVER, build_llama_annotate)
     registries.annotate.register("openai_compat", build_openai_annotate)
     registries.annotate.register(NONE, build_null_annotate)
-    registries.classify.register("kev", build_kev)
-    registries.classify.register("clef", build_clef)
+    registries.classify.register(SYSTEMONE, build_systemone)
     registries.classify.register(NONE, lambda ctx: NullDecisionClient())
     return registries
 
@@ -108,7 +109,7 @@ class ModelSlots:
     clients: SlotClients
     healths: Mapping[Slot, SlotHealth]
     residency: Residency
-    deadline_s: float
+    deadlines_s: Mapping[Slot, float]
     clock: Clock
     issues: tuple[str, ...] = field(default=())
     temperatures: Mapping[str, float] = field(default_factory=dict[str, float])
@@ -140,22 +141,22 @@ class ModelSlots:
         annotate = annotate or build_null_annotate(ctx)
         classify_off = decision is None or isinstance(decision, NullDecisionClient)
         decision = decision or NullDecisionClient()
-        backend = ClassifyBackend(
-            models.classify,
-            launcher or SubprocessLauncher(),
-            probe or http_probe(transport),
-            clock=clock,
+        providers: Mapping[Slot, object] = {
+            Slot.EMBED: embed,
+            Slot.ANNOTATE: annotate,
+            Slot.CLASSIFY: decision,
+        }
+        backends = _backends(
+            providers, launcher or SubprocessLauncher(), probe or http_probe(transport), clock
         )
         chains: Mapping[Slot, tuple[Device, ...]] = {
             Slot.EMBED: tuple(embed.devices),
             Slot.ANNOTATE: tuple(annotate.devices),
-            Slot.CLASSIFY: NONE_CHAIN if classify_off else _classify_chain(models, issues),
+            Slot.CLASSIFY: NONE_CHAIN
+            if classify_off
+            else _decision_chain(decision, models, issues),
         }
-        warms: Mapping[Slot, Callable[[Device], None]] = {
-            Slot.EMBED: embed.set_device,
-            Slot.ANNOTATE: annotate.set_device,
-            Slot.CLASSIFY: _classify_warm(backend, decision),
-        }
+        warms = {slot: _warm(backends.get(slot), providers[slot]) for slot in Slot}
         worker = submit or thread_submit()
         healths = {
             slot: SlotHealth(
@@ -173,8 +174,12 @@ class ModelSlots:
         return cls(
             SlotClients(embed, annotate, decision),
             healths,
-            Residency(models, healths, backend),
-            models.deadline_ms / 1000,
+            Residency(models, healths, backends),
+            {
+                Slot.EMBED: models.deadline_ms / 1000,
+                Slot.ANNOTATE: models.annotate.deadline_ms / 1000,
+                Slot.CLASSIFY: models.deadline_ms / 1000,
+            },
             clock,
             tuple(issues),
             (calibration or Calibration()).temperatures(_calibration_key(models)),
@@ -188,11 +193,12 @@ class ModelSlots:
         if device is None:
             health.record_unavailable()
             return Skipped(DegradedEntry(stage=name, reason=health.unavailable_reason()))
+        deadline_s = self.deadlines_s[slot]
         started = self.clock()
         try:
             value = fn()
-            if self.clock() - started > self.deadline_s:
-                raise ModelDeadlineError(f"call exceeded {self.deadline_s:.3f}s")
+            if self.clock() - started > deadline_s:
+                raise ModelDeadlineError(f"call exceeded {deadline_s:.3f}s")
         except ModelDisabledError as exc:
             return Skipped(DegradedEntry(stage=name, reason=str(exc)))
         except ModelParseError as exc:
@@ -255,11 +261,22 @@ def _calibration_key(models: ModelsConfig) -> CalibrationKey:
     return CalibrationKey(classify.model, classify.build_id, classify.question_set_version)
 
 
-def _classify_warm(backend: ClassifyBackend, decision: DecisionClient) -> Callable[[Device], None]:
+def _backends(
+    providers: Mapping[Slot, object], launcher: ProcessLauncher, probe: Probe, clock: Clock
+) -> dict[Slot, ServerBackend]:
+    return {
+        slot: ServerBackend(slot, provider.servers, launcher, probe, clock=clock)
+        for slot, provider in providers.items()
+        if isinstance(provider, Supervised)
+    }
+
+
+def _warm(backend: ServerBackend | None, provider: object) -> Callable[[Device], None]:
     def warm(device: Device) -> None:
-        backend.warm(device)
-        if isinstance(decision, Provider):
-            decision.set_device(device)
+        if backend is not None:
+            backend.warm(device)
+        if isinstance(provider, Provider):
+            provider.set_device(device)
 
     return warm
 
@@ -290,7 +307,11 @@ def _build_decision(
     return None
 
 
-def _classify_chain(models: ModelsConfig, issues: list[str]) -> tuple[Device, ...]:
+def _decision_chain(
+    decision: DecisionClient, models: ModelsConfig, issues: list[str]
+) -> tuple[Device, ...]:
+    if isinstance(decision, Provider):
+        return tuple(decision.devices)
     chain: list[Device] = []
     for name in models.classify.devices:
         try:

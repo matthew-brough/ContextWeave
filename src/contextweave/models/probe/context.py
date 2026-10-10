@@ -17,7 +17,6 @@ MIN_CPU_WINDOW = 10
 EMBED_CPU_QUERY_BUDGET_MS = 250.0
 ALL_SLOTS = (Slot.EMBED, Slot.ANNOTATE, Slot.CLASSIFY)
 ALL_DEVICES = (Device.GPU, Device.CPU)
-DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,13 +56,13 @@ class ProbeEnv:
 
     models: ModelsConfig
     configured_deadline_ms: int
+    configured_annotate_deadline_ms: int
     gate: GateConfig
     options: ProbeOptions
     slots: ModelSlots
     probe_set: ProbeSet
     host: HostInspector
     clock: Clock
-    ollama_url: str = DEFAULT_OLLAMA_URL
     transport: httpx.BaseTransport | None = None
     notes: list[str] = field(default_factory=list[str])
 

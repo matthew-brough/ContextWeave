@@ -15,7 +15,6 @@ from contextweave.index.root import discover_root
 from contextweave.models.probe.context import (
     ALL_DEVICES,
     ALL_SLOTS,
-    DEFAULT_OLLAMA_URL,
     DEFAULT_PIPELINE_BUDGET_MS,
     DEFAULT_PROBE_DEADLINE_MS,
     DEFAULT_VRAM_MIB,
@@ -50,12 +49,11 @@ def add_parser(commands: SubparserRegistry) -> None:
     probe.add_argument("--vram-mib", type=int, default=DEFAULT_VRAM_MIB)
     probe.add_argument("--pipeline-budget-ms", type=int, default=DEFAULT_PIPELINE_BUDGET_MS)
     probe.add_argument("--probe-deadline-ms", type=int, default=DEFAULT_PROBE_DEADLINE_MS)
-    probe.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL)
     probe.add_argument(
         "--candidate",
         action="append",
         metavar="SPEC",
-        help="classify ladder rung: family=kev,rung=3,build=int8,gpu=URL,cpu=URL[,model=ID]",
+        help="classify ladder rung: family=kev,rung=1,build=q4_k_m,gpu=URL,cpu=URL[,model=ID]",
     )
 
 
@@ -118,7 +116,6 @@ def run(args: argparse.Namespace, ctx: CommandContext) -> int:
     report = run_probe(
         config,
         options,
-        ollama_url=args.ollama_url,
         probe_deadline_ms=args.probe_deadline_ms,
     )
     say(render_json(report) if args.as_json else render_table(report))

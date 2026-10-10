@@ -11,6 +11,7 @@ from contextweave.core.config import (
     ClassifyConfig,
     Config,
     EmbedConfig,
+    GateConfig,
     ModelsConfig,
 )
 from contextweave.core.types import JSON
@@ -23,6 +24,7 @@ from contextweave.models.probe.classify_wire import (
     WireInfo,
 )
 from contextweave.models.probe.context import ClassifyCandidate, ProbeOptions
+from contextweave.models.probe.fixtures import EmbedReference, load_probe_set
 from contextweave.models.probe.host import GpuReading, parse_gpu_row
 from contextweave.models.probe.render import render_json, render_record, render_table
 from contextweave.models.probe.report import Line, Status, report_json
@@ -138,7 +140,7 @@ class FakeWire:
         return self.info
 
 
-NO_DOC = FakeWire(WireInfo(None, (), False))
+NO_DOC = FakeWire(WireInfo(None, ()))
 
 
 def config_with(
@@ -149,10 +151,12 @@ def config_with(
     models = ModelsConfig(
         deadline_ms=deadline_ms,
         embed=EmbedConfig(provider=embed_provider, model="jina-fake", dim=EMBED_DIM),
-        annotate=AnnotateConfig(provider=annotate_provider, model="qwen-fake"),
+        annotate=AnnotateConfig(
+            provider=annotate_provider, model="qwen-fake", deadline_ms=deadline_ms
+        ),
         classify=ClassifyConfig(provider="none"),
     )
-    return replace(Config(), models=models)
+    return replace(Config(), models=models, gate=GateConfig(window=30))
 
 
 def registries_with(embed: DeviceEmbed, annotate: DeviceAnnotate) -> ProviderRegistries:
@@ -275,76 +279,126 @@ def test_annotate_rate_and_deadline_warning() -> None:
     assert any("T19 annotate on cpu" in item and "4000" in item for item in report.recommendations)
 
 
-def ollama_transport(
-    tags: list[str], embed_ok: bool = True
+def llama_transport(
+    served: Mapping[str, list[str]], embed_ok: bool = True
 ) -> tuple[Recorder, httpx.MockTransport]:
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/api/tags":
-            return httpx.Response(200, json={"models": [{"name": name} for name in tags]})
-        if request.url.path == "/api/embed" and embed_ok:
-            return httpx.Response(200, json={"embeddings": [[1.0, 0.0, 0.0, 0.0]]})
-        if request.url.path == "/api/chat":
-            body = {"message": {"content": json.dumps({"purpose": "p", "tags": ["t"]})}}
-            return httpx.Response(200, json=body)
+        host = f"{request.url.host}:{request.url.port}"
+        if host not in served:
+            raise httpx.ConnectError("refused")
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": name} for name in served[host]]})
+        if request.url.path == "/v1/embeddings" and embed_ok:
+            body = json.loads(request.content)
+            rows = [
+                {"index": i, "embedding": [1.0, 0.0, 0.0, 0.0]} for i in range(len(body["input"]))
+            ]
+            return httpx.Response(200, json={"data": rows})
+        if request.url.path == "/v1/chat/completions":
+            content = json.dumps({"purpose": "p", "tags": ["t"]})
+            return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
         return httpx.Response(404)
 
     rec = recorder(handler)
     return rec, transport_of(rec)
 
 
-FORBIDDEN = ("pull", "create", "delete", "push", "copy", "blobs")
+FORBIDDEN = ("pull", "create", "delete", "push", "copy", "blobs", "load", "slots")
+EMBED_MODEL = "jinaai/jina-code-embeddings-1.5b-GGUF:Q8_0"
+ANNOTATE_MODEL = "unsloth/Qwen3.5-4B-GGUF:Q4_K_M"
+ALL_SERVED = {
+    "127.0.0.1:8770": [EMBED_MODEL],
+    "127.0.0.1:8771": [EMBED_MODEL],
+    "127.0.0.1:8772": [ANNOTATE_MODEL],
+    "127.0.0.1:8773": [ANNOTATE_MODEL],
+}
 
 
-def ollama_config() -> Config:
+def llama_config() -> Config:
     models = ModelsConfig(
-        embed=EmbedConfig(provider="ollama", model="jina-code-embeddings-1.5b", dim=EMBED_DIM),
-        annotate=AnnotateConfig(provider="ollama", model="qwen3.5:4b"),
+        embed=EmbedConfig(model=EMBED_MODEL, dim=EMBED_DIM),
+        annotate=AnnotateConfig(model=ANNOTATE_MODEL),
         classify=ClassifyConfig(provider="none"),
     )
     return replace(Config(), models=models)
 
 
-def test_missing_models_report_pull_hint_and_make_no_model_calls() -> None:
-    rec, transport = ollama_transport([])
+def test_no_servers_report_runbook_hint_and_exit_nonzero() -> None:
+    _, transport = llama_transport({})
     options = ProbeOptions(slots=(Slot.EMBED, Slot.ANNOTATE))
-    report = run_probe(ollama_config(), options, host=FakeHost(), transport=transport)
-    summaries = {line.probe: line.summary for line in report.lines if line.status is Status.MISSING}
-    assert summaries["embed.tag"] == (
-        "missing: jina-code-embeddings-1.5b (run `ollama pull jina-code-embeddings-1.5b` yourself)"
-    )
-    assert (
-        summaries["annotate.tag"] == "missing: qwen3.5:4b (run `ollama pull qwen3.5:4b` yourself)"
-    )
-    assert rec.paths() == ["/api/tags"]
+    report = run_probe(llama_config(), options, host=FakeHost(), transport=transport)
+    served = by_probe(report.lines, "embed.served")
+    assert served["gpu"].status is Status.UNAVAILABLE
+    assert "docs/runbooks/model-probe.md" in served["gpu"].summary
+    assert by_probe(report.lines, "annotate.served")["cpu"].status is Status.UNAVAILABLE
     assert report.exit_code == 1
 
 
-def test_present_models_probe_without_pull_or_create_calls() -> None:
-    rec, transport = ollama_transport(["jina-code-embeddings-1.5b:latest", "qwen3.5:4b"])
+def test_served_models_probe_with_only_reads_and_inference() -> None:
+    rec, transport = llama_transport(ALL_SERVED)
     options = ProbeOptions(slots=(Slot.EMBED, Slot.ANNOTATE), runs=2, warmup=0, annotate_chunks=1)
-    report = run_probe(ollama_config(), options, host=FakeHost(), transport=transport)
+    report = run_probe(llama_config(), options, host=FakeHost(), transport=transport)
     assert report.exit_code == 0
-    assert by_probe(report.lines, "embed.tag")["-"].status is Status.OK
+    assert by_probe(report.lines, "embed.served")["gpu"].status is Status.OK
     paths = set(rec.paths())
-    assert {"/api/tags", "/api/embed", "/api/chat"} <= paths
+    assert {"/v1/models", "/v1/embeddings", "/v1/chat/completions"} <= paths
     assert not any(word in path for path in paths for word in FORBIDDEN)
-    assert all(request.method in ("GET", "POST") for request in rec.requests)
     assert all(
-        request.method == "GET" or request.url.path in ("/api/embed", "/api/chat")
+        request.method == "GET" or request.url.path in ("/v1/embeddings", "/v1/chat/completions")
         for request in rec.requests
     )
 
 
-def test_ollama_unreachable_degrades_to_unavailable() -> None:
-    def refuse(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("refused")
+def test_server_reporting_other_model_warns() -> None:
+    _, transport = llama_transport({**ALL_SERVED, "127.0.0.1:8770": ["something-else"]})
+    options = ProbeOptions(slots=(Slot.EMBED,), runs=2, warmup=0)
+    report = run_probe(llama_config(), options, host=FakeHost(), transport=transport)
+    served = by_probe(report.lines, "embed.served")
+    assert served["gpu"].status is Status.WARN
+    assert served["cpu"].status is Status.OK
 
-    transport = transport_of(recorder(refuse))
-    options = ProbeOptions(slots=(Slot.EMBED, Slot.ANNOTATE))
-    report = run_probe(ollama_config(), options, host=FakeHost(), transport=transport)
-    assert by_probe(report.lines, "embed.tag")["-"].status is Status.UNAVAILABLE
-    assert by_probe(report.lines, "annotate.tag")["-"].status is Status.UNAVAILABLE
-    assert report.exit_code == 1
+
+def test_pooling_skipped_without_reference_vectors() -> None:
+    report = probe_fakes(StepClock(), slots=(Slot.EMBED,))
+    pooling = by_probe(report.lines, "embed.pooling")
+    assert pooling["gpu"].status is Status.SKIPPED
+    assert pooling["gpu"].reached is False
+
+
+def pooling_report(vector: tuple[float, ...]):
+    clock = StepClock()
+    embed = DeviceEmbed(clock, {Device.GPU: 1.0, Device.CPU: 1.0})
+    annotate = DeviceAnnotate(clock, {Device.GPU: 1.0, Device.CPU: 1.0})
+    text = "def f(): pass"
+    reference = EmbedReference(text=text, kind=EmbedKind.DOC, vector=vector)
+    probe_set = load_probe_set().model_copy(update={"embed_references": (reference,)})
+    return run_probe(
+        config_with(),
+        ProbeOptions(slots=(Slot.EMBED,), devices=(Device.GPU,), runs=2, warmup=0),
+        registries=registries_with(embed, annotate),
+        host=FakeHost(),
+        clock=clock,
+        probe_set=probe_set,
+    )
+
+
+def doc_vector(text: str) -> tuple[float, ...]:
+    slot = sum(text.encode()) % EMBED_DIM
+    return tuple(1.0 if index == slot else 0.0 for index in range(EMBED_DIM))
+
+
+def test_pooling_matches_reference_vectors() -> None:
+    report = pooling_report(doc_vector("def f(): pass"))
+    line = by_probe(report.lines, "embed.pooling")["gpu"]
+    assert line.status is Status.OK
+    assert line.metrics["min_cosine"] == pytest.approx(1.0)
+
+
+def test_pooling_mismatch_warns() -> None:
+    flipped = tuple(1.0 - value for value in doc_vector("def f(): pass"))
+    line = by_probe(pooling_report(flipped).lines, "embed.pooling")["gpu"]
+    assert line.status is Status.WARN
+    assert "--pooling last" in line.summary
 
 
 def candidate(rung: int, build: str = "b", family: str = "kev") -> ClassifyCandidate:
@@ -440,16 +494,16 @@ def test_unreachable_candidate_is_unavailable_and_walk_continues() -> None:
     assert by_probe(report.lines, "classify.kev.r2.b.fit")["gpu"].status is Status.OK
 
 
-def test_protocol_capabilities_batching_dynamic_and_score() -> None:
+def test_protocol_capabilities_concurrency_dynamic_and_served() -> None:
     clock = StepClock()
     clients = {(1, Device.GPU): FakeDecision(clock, 200.0, 5.0)}
-    wire = FakeWire(WireInfo("http://gpu/openapi.json", ("/v1/decide",), True))
+    wire = FakeWire(WireInfo("http://gpu/v1/models", ("model",)))
     report = classify_report(clock, clients, [candidate(1)], wire=wire)
     facts = by_probe(report.lines, "classify.kev.r1.b.protocol")["gpu"].facts
-    assert facts["multi_state_batching"].startswith("yes")
+    assert facts["concurrent_states"].startswith("yes")
     assert facts["dynamic_options"] == "yes"
-    assert facts["score_native"].startswith("yes")
-    assert facts["wire_paths"] == "/v1/decide"
+    assert facts["serves_model"] == "yes"
+    assert facts["served_models"] == "model"
 
 
 def test_protocol_capabilities_negative_cases() -> None:
@@ -457,9 +511,9 @@ def test_protocol_capabilities_negative_cases() -> None:
     client = FakeDecision(clock, 0.0, 100.0, short_rows=True, echo_options=False)
     report = classify_report(clock, {(1, Device.GPU): client}, [candidate(1)])
     facts = by_probe(report.lines, "classify.kev.r1.b.protocol")["gpu"].facts
-    assert facts["multi_state_batching"].startswith("no")
+    assert facts["concurrent_states"].startswith("no")
     assert facts["dynamic_options"].startswith("no")
-    assert facts["score_native"].startswith("yes (reply keys differ")
+    assert facts["serves_model"].startswith("unknown")
 
 
 def test_classify_none_provider_is_skipped() -> None:

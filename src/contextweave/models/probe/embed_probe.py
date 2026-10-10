@@ -2,38 +2,36 @@ import math
 from collections.abc import Sequence
 
 from contextweave.models.probe.context import ProbeEnv
-from contextweave.models.probe.ollama_tags import TagCatalog
-from contextweave.models.probe.report import Line, Status, missing_summary
+from contextweave.models.probe.report import Line, Status
+from contextweave.models.probe.served import served_lines
 from contextweave.models.probe.timing import rate_per_s, sample_ms, summarize, time_ms
 from contextweave.models.probe.util import Failure, attempt, gpu_used_mib
 from contextweave.models.providers import Device, EmbedClient, EmbedKind
 
 DOC_BATCH = 16
 QUERY_SAMPLE = "parse a toml config file into dataclasses"
-OLLAMA = "ollama"
+POOLING_MIN_COSINE = 0.99
 
 
-def probe_embed(env: ProbeEnv, catalog: TagCatalog | None) -> list[Line]:
-    """Tag presence, prefixes, query latency and doc throughput per device for the embed slot."""
+def probe_embed(env: ProbeEnv) -> list[Line]:
+    """Served model, prefixes, pooling parity, query latency and doc throughput per device."""
     config = env.models.embed
     if config.provider == "none":
         return [Line("embed", "-", Status.SKIPPED, "provider is none")]
-    lines: list[Line] = []
-    if config.provider == OLLAMA:
-        tag_line = _tag_line(config.model, catalog, env.ollama_url)
-        lines.append(tag_line)
-        if tag_line.status is not Status.OK:
-            return lines
-    lines.append(_card_prefix_line(env))
     client = env.slots.clients.embed
+    devices = _devices(env, client)
+    lines = served_lines("embed", client, config.model, tuple(devices), env.transport)
+    lines.append(_card_prefix_line(env))
     effect_done = False
-    for device in _devices(env, client):
+    for device in devices:
         moved = attempt(lambda device=device: client.set_device(device))
         if isinstance(moved, Failure):
             lines.append(Line("embed.query", device.value, Status.UNAVAILABLE, moved.reason))
             continue
         latency = _latency_lines(env, client, device)
         lines.extend(latency)
+        if any(line.status in (Status.OK, Status.WARN) for line in latency):
+            lines.append(_pooling_line(env, client, device))
         if not effect_done and any(line.status in (Status.OK, Status.WARN) for line in latency):
             lines.append(_prefix_effect_line(env, client, device))
             effect_done = True
@@ -45,12 +43,33 @@ def _devices(env: ProbeEnv, client: EmbedClient) -> list[Device]:
     return wanted or [device for device in client.devices if device is not Device.NONE]
 
 
-def _tag_line(tag: str, catalog: TagCatalog | None, url: str) -> Line:
-    if catalog is None:
-        return Line("embed.tag", "-", Status.UNAVAILABLE, f"ollama unreachable at {url}")
-    if not catalog.has(tag):
-        return Line("embed.tag", "-", Status.MISSING, missing_summary(tag))
-    return Line("embed.tag", "-", Status.OK, f"present: {tag}")
+def _pooling_line(env: ProbeEnv, client: EmbedClient, device: Device) -> Line:
+    references = env.probe_set.embed_references
+    if not references:
+        summary = "no reference vectors bundled; generate them per docs/runbooks/model-probe.md"
+        return Line("embed.pooling", device.value, Status.SKIPPED, summary, reached=False)
+    dim = env.models.embed.dim
+    sims = attempt(
+        lambda: [
+            _cosine(
+                client.embed([reference.text], kind=reference.kind)[0],
+                reference.vector[:dim],
+            )
+            for reference in references
+        ]
+    )
+    if isinstance(sims, Failure):
+        return Line("embed.pooling", device.value, Status.UNAVAILABLE, sims.reason)
+    worst = min(sims)
+    metrics = {"min_cosine": worst, "references": float(len(sims))}
+    if worst >= POOLING_MIN_COSINE:
+        summary = f"matches reference vectors, min cosine {worst:.4f}"
+        return Line("embed.pooling", device.value, Status.OK, summary, metrics)
+    summary = (
+        f"min cosine {worst:.4f} vs reference < {POOLING_MIN_COSINE}; "
+        "server pooling differs (llama-server needs --pooling last)"
+    )
+    return Line("embed.pooling", device.value, Status.WARN, summary, metrics)
 
 
 def _card_prefix_line(env: ProbeEnv) -> Line:
@@ -192,6 +211,8 @@ def _top1(
 
 
 def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
+    if len(left) != len(right):
+        raise ValueError(f"vector dims differ: {len(left)} vs {len(right)}")
     dot = sum(a * b for a, b in zip(left, right, strict=True))
     norm = math.sqrt(sum(a * a for a in left)) * math.sqrt(sum(b * b for b in right))
     return dot / norm if norm else 0.0

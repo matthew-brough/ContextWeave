@@ -8,7 +8,7 @@ from typing import Protocol
 
 import httpx
 
-from contextweave.core.config import ClassifyConfig, DeviceEndpointConfig, ModelsConfig
+from contextweave.core.config import DeviceEndpointConfig, ModelsConfig
 from contextweave.core.registry import Registry
 from contextweave.models.errors import ModelTransportError, ProviderSlotError
 from contextweave.models.health import Clock, SlotHealth
@@ -71,26 +71,30 @@ class SubprocessLauncher:
         return SubprocessHandle(process)
 
 
+HEALTH_PATH = "/health"
+
+
 def http_probe(transport: httpx.BaseTransport | None = None) -> Probe:
-    """Probe that treats any HTTP answer from the endpoint as alive."""
+    """Probe that treats a 2xx from the endpoint's /health as alive (llama-server: model loaded)."""
 
     def probe(endpoint: str) -> bool:
         try:
             with httpx.Client(transport=transport, timeout=PROBE_TIMEOUT_S) as client:
-                client.get(endpoint)
+                response = client.get(f"{endpoint.rstrip('/')}{HEALTH_PATH}")
         except httpx.HTTPError:
             return False
-        return True
+        return response.is_success
 
     return probe
 
 
-class ClassifyBackend:
-    """Supervises classify servers: starts launch commands, health-checks external endpoints."""
+class ServerBackend:
+    """Supervises one slot's per-device servers: launches on warm, frees other devices once up."""
 
     def __init__(
         self,
-        config: ClassifyConfig,
+        slot: Slot,
+        servers: Mapping[Device, DeviceEndpointConfig],
         launcher: ProcessLauncher,
         probe: Probe,
         *,
@@ -98,10 +102,8 @@ class ClassifyBackend:
         sleep: Sleep = time.sleep,
         startup_timeout_s: float = 60.0,
     ) -> None:
-        self._endpoints: Mapping[Device, DeviceEndpointConfig] = {
-            Device.GPU: config.gpu,
-            Device.CPU: config.cpu,
-        }
+        self._slot = slot
+        self._servers = servers
         self._launcher = launcher
         self._probe = probe
         self._clock = clock
@@ -110,21 +112,23 @@ class ClassifyBackend:
         self._handles: dict[Device, ProcessHandle] = {}
 
     def warm(self, device: Device) -> None:
-        """Ensure the device's server is running (when launch is set) and answering."""
-        endpoint = self._endpoints.get(device)
-        if endpoint is None:
-            raise ProviderSlotError(f"classify has no device '{device}'")
+        """Start the device's server when launch is set, wait for it, then stop the others."""
+        server = self._servers.get(device)
+        if server is None:
+            raise ProviderSlotError(f"{self._slot} has no server for device '{device}'")
         handle = self._handles.get(device)
-        if endpoint.launch and (handle is None or not handle.alive()):
-            self._handles[device] = self._launcher.start(endpoint.launch)
-        deadline = self._clock() + self._startup_timeout_s
-        while not self._probe(endpoint.endpoint):
+        if server.launch and (handle is None or not handle.alive()):
+            self._handles[device] = self._launcher.start(server.launch)
+        deadline = self._clock() + (self._startup_timeout_s if server.launch else 0.0)
+        while not self._probe(server.endpoint):
             if self._clock() >= deadline:
                 raise ModelTransportError(
-                    f"classify {device} endpoint {endpoint.endpoint} not answering",
+                    f"{self._slot} {device} endpoint {server.endpoint} not answering",
                     device_tried=str(device),
                 )
             self._sleep(POLL_INTERVAL_S)
+        for other in [other for other in self._handles if other is not device]:
+            self._handles.pop(other).stop()
 
     def stop_all(self) -> None:
         """Stop every supervised process; external endpoints are left alone."""
@@ -145,10 +149,10 @@ class Residency:
         self,
         models: ModelsConfig,
         healths: Mapping[Slot, SlotHealth],
-        backend: ClassifyBackend,
+        backends: Mapping[Slot, ServerBackend],
     ) -> None:
         self._healths = healths
-        self._backend = backend
+        self._backends = backends
         self._plans: Registry[Profile, ResidencyPlan] = Registry()
         self._plans.register(
             Profile.BULK,
@@ -173,8 +177,9 @@ class Residency:
             health = self._healths[slot]
             if wanted is None:
                 health.suspend()
-                if slot is Slot.CLASSIFY:
-                    self._backend.stop_all()
+                backend = self._backends.get(slot)
+                if backend is not None:
+                    backend.stop_all()
                 continue
             health.resume()
             health.activate(_resolve(health, wanted))

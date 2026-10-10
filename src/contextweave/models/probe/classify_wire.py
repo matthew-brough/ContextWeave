@@ -6,15 +6,13 @@ import httpx
 
 from contextweave.core.config import DeviceEndpointConfig, ModelsConfig
 from contextweave.core.registry import UnknownKeyError
-from contextweave.core.types import JSON
 from contextweave.models.decision import DecisionClient, ensure_decision_client
-from contextweave.models.errors import ModelError
 from contextweave.models.probe.context import ClassifyCandidate
+from contextweave.models.probe.served import MODELS_PATH, served_models
 from contextweave.models.providers import BuildContext, Device, Endpoints, ProviderRegistries
-from contextweave.models.wire import parse_json_text
 
-OPENAPI_PATH = "/openapi.json"
-WIRE_TIMEOUT_S = 3.0
+SYSTEMONE = "systemone"
+NONE = "none"
 NO_ENDPOINT = DeviceEndpointConfig()
 
 
@@ -35,11 +33,10 @@ type ClassifyFactory = Callable[[ClassifyTarget], DecisionClient]
 @dataclass(frozen=True, slots=True)
 class WireInfo:
     source: str | None
-    paths: tuple[str, ...]
-    mentions_score: bool
+    served: tuple[str, ...]
 
 
-NO_WIRE = WireInfo(None, (), False)
+NO_WIRE = WireInfo(None, ())
 
 
 class WireInspector(Protocol):
@@ -47,29 +44,16 @@ class WireInspector(Protocol):
 
 
 class HttpWireInspector:
-    """Reads the classify server's own OpenAPI document, from the endpoint given and nowhere else."""
+    """Reads the model ids the classify server reports, from the endpoint given and nowhere else."""
 
     def __init__(self, transport: httpx.BaseTransport | None = None) -> None:
         self._transport = transport
 
     def inspect(self, endpoint: str) -> WireInfo:
-        url = endpoint.rstrip("/") + OPENAPI_PATH
-        try:
-            with httpx.Client(transport=self._transport, timeout=WIRE_TIMEOUT_S) as client:
-                response = client.get(url)
-            if response.status_code >= 400:
-                return NO_WIRE
-            paths = _paths(parse_json_text(response.text))
-        except httpx.HTTPError, ModelError:
+        served = served_models(endpoint, self._transport)
+        if served is None:
             return NO_WIRE
-        return WireInfo(url, paths, '"score"' in response.text.lower())
-
-
-def _paths(document: JSON) -> tuple[str, ...]:
-    if not isinstance(document, dict):
-        return ()
-    section = document.get("paths")
-    return tuple(sorted(section)) if isinstance(section, dict) else ()
+        return WireInfo(endpoint.rstrip("/") + MODELS_PATH, served)
 
 
 def registry_factory(
@@ -77,14 +61,15 @@ def registry_factory(
     models: ModelsConfig,
     transport: httpx.BaseTransport | None,
 ) -> ClassifyFactory:
-    """Build a decision client per target through the classify provider registry."""
+    """Build a decision client per target through the configured classify provider; family is a label."""
+    provider = SYSTEMONE if models.classify.provider == NONE else models.classify.provider
 
     def build(target: ClassifyTarget) -> DecisionClient:
         candidate = target.candidate
         endpoint = DeviceEndpointConfig(endpoint=target.endpoint)
         classify = replace(
             models.classify,
-            provider=candidate.family,
+            provider=provider,
             model=candidate.model,
             devices=(target.device.value,),
             gpu=endpoint if target.device is Device.GPU else NO_ENDPOINT,
@@ -92,10 +77,10 @@ def registry_factory(
         )
         ctx = BuildContext(replace(models, classify=classify), Endpoints(), transport)
         try:
-            factory = registries.classify.get(candidate.family)
+            factory = registries.classify.get(provider)
         except UnknownKeyError as exc:
             raise ProbeUnavailableError(
-                f"classify provider '{candidate.family}' is not registered (ships with T20)"
+                f"classify provider '{provider}' is not registered"
             ) from exc
         return ensure_decision_client(factory(ctx))
 

@@ -21,6 +21,7 @@ from contextweave.models.probe.classify_wire import (
 )
 from contextweave.models.probe.context import ClassifyCandidate, ProbeEnv
 from contextweave.models.probe.report import PROBED, Line, Status
+from contextweave.models.probe.served import serves
 from contextweave.models.probe.timing import sample_ms, summarize, time_ms
 from contextweave.models.probe.util import Failure, attempt, gpu_used_mib
 from contextweave.models.providers import Device
@@ -29,7 +30,7 @@ BYTES_PER_TOKEN = 3.5
 BATCH_GAIN_LIMIT = 0.8
 PROB_TOLERANCE = 1e-3
 CONFIG_RUNG = 0
-WIRE_KEYS = ("wire_source", "wire_paths")
+WIRE_KEYS = ("wire_source", "served_models")
 
 
 @dataclass(slots=True)
@@ -254,11 +255,11 @@ def _capability_line(
     client = outcome.client
     facts: dict[str, str] = {
         "wire_source": info.source or "none",
-        "wire_paths": ",".join(info.paths) or "none",
+        "served_models": ",".join(info.served) or "none",
     }
     if client is not None:
-        facts["score_native"] = _score_native(env, client, info)
-        facts["multi_state_batching"] = _batching(outcome.sweeps)
+        facts["serves_model"] = _serves(candidate, info)
+        facts["concurrent_states"] = _batching(outcome.sweeps)
         facts["dynamic_options"] = _dynamic(env, client)
     return Line(
         f"classify.{candidate.label}.protocol",
@@ -277,17 +278,10 @@ def _decide_one(client: DecisionClient, state: str, question: Question) -> list[
     return rows[0] if rows else Failure("empty reply")
 
 
-def _score_native(env: ProbeEnv, client: DecisionClient, info: WireInfo) -> str:
-    question = env.probe_set.score_question.question()
-    reply = _decide_one(client, build_states(env, 1)[0], question)
-    if isinstance(reply, Failure):
-        return f"error: {reply.reason}"
-    keys: set[str] = set(reply[0].probs) if reply else set()
-    if keys and keys != set(question.options):
-        return "yes (reply keys differ from the bucket options)"
-    if info.mentions_score:
-        return "yes (wire doc mentions score)"
-    return "no (bucketed options)" if info.source else "no evidence (bucketed options, no wire doc)"
+def _serves(candidate: ClassifyCandidate, info: WireInfo) -> str:
+    if info.source is None:
+        return "unknown (no /v1/models)"
+    return "yes" if serves(info.served, candidate.model) else "no (check --alias or the model)"
 
 
 def _batching(sweeps: Sequence[Sweep]) -> str:

@@ -1,19 +1,29 @@
-question_set_version = 1
+question_set_version = 2
 
 [[question]]
 name = "intent"
 text = "What is the developer trying to learn from the code with this query?"
 kind = "choice"
-options = ["lookup", "implementation", "architecture", "debug", "config", "usage"]
+criteria = [
+  { label = "lookup", description = "Find where a named symbol, file or value is defined." },
+  { label = "implementation", description = "Understand how a specific behaviour is implemented." },
+  { label = "architecture", description = "Understand how parts of the system fit together." },
+  { label = "debug", description = "Track down the cause of a bug, error or unexpected behaviour." },
+  { label = "config", description = "Find or change configuration, settings or wiring." },
+  { label = "usage", description = "See how something is called or used elsewhere." },
+]
 
 [[question]]
 name = "scope"
 text = "Which top-level directory of the repository does the query concern?"
 kind = "choice"
-options = ["any"]
+criteria = [
+  { label = "any", description = "No single directory: the query spans the repository or names none." },
+]
 options_from = "scope_dirs"
+option_description = "Code under the top-level directory {option}/."
 
 [[question]]
 name = "needs_graph"
 text = "Does answering require following relations to other code such as callers, callees or imports?"
-kind = "binary"
+kind = "noul"

@@ -3,7 +3,7 @@ from dataclasses import replace
 
 from contextweave.core.errors import ErrorEntry
 from contextweave.index.store import Store
-from contextweave.models.questions import SCOPE_DIR_LIMIT
+from contextweave.models.decision import CHOICE_OPTION_LIMIT
 from contextweave.retrieve.ask import ask_stage
 from contextweave.retrieve.candidates import Candidate, CandidateSet, Ranks
 from contextweave.retrieve.context import Plan, QueryContext, RrfWeights
@@ -213,13 +213,13 @@ def resolve_intent(ctx: QueryContext, default: str) -> str:
 
 
 def scope_hints(store: Store) -> tuple[list[str], list[str]]:
-    """Top-level directories (at most 30) and the paths of the 10 most recently touched files."""
+    """Top-level directories that fit beside the `any` scope option, and the 10 most recent files."""
     paths = [as_str(row[0]) for row in store.query("SELECT path FROM files ORDER BY path")]
     directories = sorted({path.split("/", 1)[0] for path in paths if "/" in path})
     recent = store.query(
         "SELECT path FROM files ORDER BY mtime_ns DESC, path LIMIT ?", (RECENT_FILES,)
     )
-    return directories[:SCOPE_DIR_LIMIT], [as_str(row[0]) for row in recent]
+    return directories[: CHOICE_OPTION_LIMIT - 1], [as_str(row[0]) for row in recent]
 
 
 def plan_state(query: str, directories: list[str], recent: list[str]) -> str:

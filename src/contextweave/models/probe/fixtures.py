@@ -3,7 +3,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from contextweave.models.decision import Question, QuestionKind
+from contextweave.models.decision import Question, QuestionKind, kind_options
+from contextweave.models.providers import EmbedKind
 
 FIXTURE_PATH = Path(__file__).parent / "probe_set.toml"
 
@@ -38,10 +39,23 @@ class QuestionSample(Frozen):
     name: str
     text: str
     kind: QuestionKind
-    options: tuple[str, ...]
+    options: tuple[str, ...] = ()
+    descriptions: tuple[str, ...] = ()
 
     def question(self) -> Question:
-        return Question(self.name, self.text, self.kind, self.options)
+        return Question(
+            self.name,
+            self.text,
+            self.kind,
+            kind_options(self.kind, self.options),
+            self.descriptions,
+        )
+
+
+class EmbedReference(Frozen):
+    text: str
+    kind: EmbedKind
+    vector: tuple[float, ...]
 
 
 class ProbeSet(Frozen):
@@ -52,6 +66,7 @@ class ProbeSet(Frozen):
     gate_questions: tuple[QuestionSample, ...]
     score_question: QuestionSample
     dynamic_question: QuestionSample
+    embed_references: tuple[EmbedReference, ...] = ()
 
 
 def load_probe_set(path: Path = FIXTURE_PATH) -> ProbeSet:

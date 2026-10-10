@@ -4,12 +4,11 @@ from dataclasses import dataclass, field, replace
 from contextweave.core.config import ClassifyConfig, Config, ModelsConfig
 from contextweave.models.calibration import Calibration
 from contextweave.models.decision import (
-    NO,
-    YES,
     Decision,
     Question,
     QuestionKind,
     decision_of,
+    noul_distribution,
     score_distribution,
 )
 from contextweave.models.errors import ModelTransportError
@@ -51,10 +50,10 @@ class FakeDecision:
     def _answer(self, state: str, question: Question) -> Decision:
         yes = self.yes(state)
         match question.kind:
-            case QuestionKind.BINARY:
-                return decision_of(question, {YES: yes, NO: 1 - yes})
+            case QuestionKind.NOUL:
+                return decision_of(question, noul_distribution(yes))
             case QuestionKind.SCORE:
-                return decision_of(question, score_distribution(yes))
+                return decision_of(question, score_distribution(question.options, yes))
             case QuestionKind.CHOICE:
                 chosen = self.choices.get(question.name, question.options[0])
                 return decision_of(question, {chosen: 1.0})
