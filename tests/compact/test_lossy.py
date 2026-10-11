@@ -8,7 +8,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from contextweave.compact.lossy import attach_annotations, prepare_lossy
-from contextweave.core.budget import measure_payload
+from contextweave.core.budget import bytes35
 from contextweave.core.config import AnnotateConfig, Config
 from contextweave.core.refs import SymbolAnchor
 from contextweave.index.store import Store
@@ -22,7 +22,7 @@ from contextweave.retrieve.search import SearchOptions, search
 
 ANNOTATE = AnnotateConfig()
 PURPOSE = "handles one request"
-BODY = "    value = 0\n" * 30
+BODY = "    value = 0\n" * 60
 
 
 def annotate_all(store: Store, config: AnnotateConfig = ANNOTATE, purpose: str = PURPOSE) -> None:
@@ -33,7 +33,7 @@ def annotate_all(store: Store, config: AnnotateConfig = ANNOTATE, purpose: str =
     )
 
 
-def corpus(store: Store, files: int, lines: int = 30) -> None:
+def corpus(store: Store, files: int, lines: int = 60) -> None:
     for number in range(files):
         body = f"def handler_{number}():\n" + "    value = 0\n" * lines + "    return value\n"
         ingest(store, f"pkg/mod{number}.py", body)
@@ -172,7 +172,7 @@ def test_ceiling_with_annotations_uses_summaries(store: Store) -> None:
     annotate_all(store)
     budget = 1000
     result = search(store, Config(), "handler value", SearchOptions(max_tokens=budget))
-    assert measure_payload(result.pack, result.text) <= budget
+    assert bytes35(result.text) <= budget
     summaries = [item for item in result.pack["items"] if item["rep"] == "summary"]
     assert summaries
     assert result.pack["budget"]["truncated"] is True
@@ -227,7 +227,7 @@ def test_synthesized_refs_resolve_to_exact_source(
         if annotated:
             annotate_all(store)
         result = search(store, Config(), "handler value", SearchOptions(max_tokens=budget))
-        assert measure_payload(result.pack, result.text) <= budget
+        assert bytes35(result.text) <= budget
         for item in result.pack["items"]:
             if item["rep"] != "source":
                 body = resolve_ref(store, item["ref"])
@@ -245,6 +245,7 @@ CONFIG_JSON = (
     ' "key": "/etc/ssl/private/a-long-key-name.key"}},'
     ' "limits": {"requests": 1000, "burst": 50}}\n'
 )
+BULKY_JSON = CONFIG_JSON.replace("a-very-long-host-name", "a-very-long-host-name" * 8)
 UTILITY = (
     "class Point:\n"
     "    def __init__(self, x):\n"
@@ -320,7 +321,7 @@ def test_structural_rungs_end_to_end_round_trip(store: Store) -> None:
     paths: list[str] = []
     for number in range(6):
         for template, text in (
-            ("conf{}/app.json", CONFIG_JSON),
+            ("conf{}/app.json", BULKY_JSON),
             ("pkg{}/point.py", UTILITY),
             ("pkg{}/__init__.py", REEXPORTS),
         ):
@@ -336,7 +337,7 @@ def test_structural_rungs_end_to_end_round_trip(store: Store) -> None:
         result = AssembleStage().assemble(
             make_ctx(store, max_tokens=budget), CandidateSet.of(cands)
         )
-        assert measure_payload(result.pack, result.text) <= budget
+        assert bytes35(result.text) <= budget
         for item in result.pack["items"]:
             reps.add(item["rep"])
             if item["rep"] != "source":

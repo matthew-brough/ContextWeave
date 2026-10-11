@@ -10,7 +10,7 @@ from pathlib import Path
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from contextweave.core.budget import measure_payload
+from contextweave.core.budget import bytes35, serialize_structured
 from contextweave.core.config import load_config
 from contextweave.core.paths import user_state_dir
 from contextweave.eval.adapters import Adapter, AdapterContext, ScoreSample, Served, degraded
@@ -22,6 +22,7 @@ from contextweave.models.calibration import CALIBRATION_FILE_ENV, calibration_pa
 AST_MCP_COMMAND = "ast-mcp"
 CW_COMMAND = "cw"
 DISABLE_STAGE_ENV = "CW_EVAL_DISABLE_STAGE"
+STRUCTURED_ENV = "CW_EVAL_STRUCTURED"
 PROFILE_ENV = "CW_EVAL_PROFILE"
 FULL_PROFILE = "full"
 CLASSIFY_STAGES = frozenset({"plan", "gate", "expand", "coverage"})
@@ -34,13 +35,14 @@ CALL_TIMEOUT_SECONDS = 120.0
 
 @dataclass(frozen=True, slots=True)
 class ToolTarget:
-    """How to launch an MCP server and which tool answers a query."""
+    """How to launch an MCP server, which tool answers a query, and whether agents see only its text."""
 
     command: str
     args: tuple[str, ...]
     tool: str
     query_args: Mapping[str, JSON]
     indexed: bool = False
+    text_only: bool = False
 
 
 def _walk(value: JSON, found: list[dict[str, JSON]]) -> None:
@@ -153,7 +155,8 @@ async def _query(
     text = "\n".join(block.text for block in result.content if block.type == "text")
     structured = result.structured_content
     payload = _payload(structured, text)
-    tokens = measure_payload(structured if structured is not None else {}, text)
+    shown = text if target.text_only or structured is None else serialize_structured(structured)
+    tokens = bytes35(shown)
     error = (text or "tool error") if result.is_error else None
     return Served(
         extract_items(payload),
@@ -191,6 +194,8 @@ async def _drive(
     }
     if context.ablate is not None:
         env[DISABLE_STAGE_ENV] = context.ablate
+    if target.text_only:
+        env[STRUCTURED_ENV] = "1"
     params = StdioServerParameters(
         command=target.command, args=list(target.args), env=env, cwd=context.root
     )
@@ -231,5 +236,7 @@ def ast_mcp_adapter(context: AdapterContext) -> Adapter:
 
 def cw_adapter(context: AdapterContext) -> Adapter:
     """cw serve --inproc context_search over stdio."""
-    target = ToolTarget(CW_COMMAND, ("serve", "--inproc"), "context_search", {}, indexed=True)
+    target = ToolTarget(
+        CW_COMMAND, ("serve", "--inproc"), "context_search", {}, indexed=True, text_only=True
+    )
     return McpAdapter(target, context)

@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import TypeAdapter, ValidationError
 from tree_sitter import Query, QueryError
 
-from contextweave.core.budget import Ceiling, measure_payload
+from contextweave.core.budget import Ceiling, bytes35
 from contextweave.core.errors import DegradedEntry, Envelope, ErrorEntry, OmittedEntry
 from contextweave.core.project import ProjectEcho, ResolvedProject, resolve_project
 from contextweave.core.refs import ByteAnchor, PartAnchor, Ref, RefError, SymbolAnchor, parse_ref
@@ -63,7 +63,6 @@ from contextweave.server.render import (
 )
 from contextweave.server.snapshot import Snapshot, lang_error_entry
 
-MAX_LINKS = 50
 CANDIDATE_LIMIT = 200
 DEFAULT_SEARCH_LIMIT = 20
 SCHEMA_DEPTH = 4
@@ -74,11 +73,10 @@ _JSON_OBJECT: TypeAdapter[dict[str, JSON]] = TypeAdapter(dict[str, JSON])
 
 @dataclass(frozen=True, slots=True)
 class ToolResult:
-    """A finished tool response: structured payload, text fallback and ref links."""
+    """A finished tool response: typed payload for internal callers and the text sent to agents."""
 
     structured: dict[str, JSON]
     text: str
-    links: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +87,6 @@ class ToolSpec:
     title: str
     description: str
     input_schema: dict[str, JSON]
-    output_schema: dict[str, JSON]
     run: Callable[[ToolContext, Mapping[str, JSON]], ToolResult]
 
 
@@ -110,25 +107,6 @@ class Tool[A: Mapping[str, object], P: Mapping[str, object]]:
 TOOLS: Registry[str, ToolSpec] = Registry()
 
 
-def _links(structured: JSON, found: dict[str, None]) -> None:
-    if isinstance(structured, dict):
-        for key, value in structured.items():
-            if key in ("ref", "current") and isinstance(value, str) and value.startswith("cw://"):
-                found.setdefault(value, None)
-            else:
-                _links(value, found)
-    elif isinstance(structured, list):
-        for item in structured:
-            _links(item, found)
-
-
-def collect_links(structured: dict[str, JSON]) -> tuple[str, ...]:
-    """Distinct refs mentioned in a payload, capped for resource_link emission."""
-    found: dict[str, None] = {}
-    _links(structured, found)
-    return tuple(found)[:MAX_LINKS]
-
-
 def _first_problem(exc: ValidationError) -> str:
     details = exc.errors(include_url=False, include_context=False, include_input=False)
     if not details:
@@ -147,11 +125,10 @@ def define[A: Mapping[str, object], P: Mapping[str, object]](tool: Tool[A, P]) -
         return _JSON_OBJECT.validate_json(payload_adapter.dump_json(payload))
 
     def measure(payload: P) -> int:
-        return measure_payload(dump(payload), tool.render(payload))
+        return bytes35(tool.render(payload))
 
     def finish(payload: P) -> ToolResult:
-        structured = dump(payload)
-        return ToolResult(structured, tool.render(payload), collect_links(structured))
+        return ToolResult(dump(payload), tool.render(payload))
 
     def fail(env: Envelope, project: ProjectEcho | None, entry: ErrorEntry) -> ToolResult:
         env.add_error(entry)
@@ -223,7 +200,6 @@ def define[A: Mapping[str, object], P: Mapping[str, object]](tool: Tool[A, P]) -
         tool.title,
         tool.description,
         json_schema(tool.args_type, mode="validation"),
-        json_schema(tool.payload_type, mode="serialization"),
         execute,
     )
     return TOOLS.register(tool.name, spec)

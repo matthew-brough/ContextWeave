@@ -27,13 +27,6 @@ def serialize_structured(structured: Mapping[str, object]) -> str:
     return json.dumps(structured, separators=(",", ":"), sort_keys=True, ensure_ascii=False)
 
 
-def measure_payload(
-    structured: Mapping[str, object], text: str, estimator: Estimator = bytes35
-) -> int:
-    """Count tokens of structuredContent plus the text fallback."""
-    return estimator(serialize_structured(structured)) + estimator(text)
-
-
 @dataclass(frozen=True, slots=True)
 class Ceiling:
     """Token ceiling for one tool response."""

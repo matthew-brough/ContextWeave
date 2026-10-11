@@ -2,7 +2,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from contextweave.core.budget import measure_payload
+from contextweave.core.budget import bytes35
 from contextweave.core.config import Config
 from contextweave.core.types import JSON
 from contextweave.index.indexer import index_project
@@ -314,7 +314,7 @@ def test_budget_truncation_with_omitted_refs(context: ToolContext) -> None:
     assert "hint" in result.structured
     omitted = items(result, "omitted")
     assert omitted and all(str(entry["ref"]).startswith("cw://") for entry in omitted)
-    assert measure_payload(result.structured, result.text) <= 250
+    assert bytes35(result.text) <= 250
 
 
 def test_budget_omitted_overflow_pack(context: ToolContext, key: str) -> None:
@@ -331,16 +331,16 @@ def test_budget_clips_single_oversized_symbol(project: Path, context: ToolContex
     reindex(project)
     result = run(context, "get_symbol", name="huge", max_tokens=300)
     assert result.structured["truncated"] is True
-    assert measure_payload(result.structured, result.text) <= 300
+    assert bytes35(result.text) <= 300
     assert "hint" in result.structured
 
 
 def test_outline_budget_trims_imports_first(context: ToolContext) -> None:
     full = run(context, "file_outline", path="sample.py")
-    used = measure_payload(full.structured, full.text)
+    used = bytes35(full.text)
     trimmed = run(context, "file_outline", path="sample.py", max_tokens=used - 10)
     assert trimmed.structured["truncated"] is True
-    assert measure_payload(trimmed.structured, trimmed.text) <= used - 10
+    assert bytes35(trimmed.text) <= used - 10
     assert "imports" not in trimmed.structured
     assert any(entry["qualified_name"] == "<imports>" for entry in items(trimmed, "omitted"))
 
@@ -352,4 +352,4 @@ def test_expand_clips_to_budget(project: Path, context: ToolContext) -> None:
     ref = str(items(run(context, "get_symbol", name="huge", view="signature"), "symbols")[0]["ref"])
     result = run(context, "expand", ref=ref, max_tokens=300)
     assert result.structured["truncated"] is True
-    assert measure_payload(result.structured, result.text) <= 300
+    assert bytes35(result.text) <= 300

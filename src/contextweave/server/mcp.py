@@ -1,3 +1,4 @@
+import os
 import warnings
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
@@ -18,6 +19,7 @@ from mcp.shared.message import ServerMessageMetadata
 from pydantic import TypeAdapter, ValidationError
 
 from contextweave.core.types import JSON
+from contextweave.eval.mcp_adapters import STRUCTURED_ENV
 from contextweave.server import resources
 from contextweave.server.context import ToolContext
 from contextweave.server.resources import ResourceBody, ResourceInfo
@@ -25,8 +27,9 @@ from contextweave.server.tools import TOOLS, ToolResult, ToolSpec
 
 SERVER_NAME = "contextweave"
 INSTRUCTIONS = (
-    "Structural code retrieval. Every response declares profile and group; read them before the "
-    "payload. Refs (cw://...) returned by one tool are accepted by expand."
+    "Structural code retrieval. Results are terse text: `== path ==` per file, then "
+    "`kind name Lstart-end` per item. Pass name and path to get_symbol; refs (cw://...) shown on "
+    "summarised or omitted items go to expand."
 )
 MAX_TOOLS = 10
 
@@ -87,7 +90,6 @@ def _tool(spec: ToolSpec) -> types.Tool:
         title=spec.title,
         description=spec.description,
         input_schema=spec.input_schema,
-        output_schema=spec.output_schema,
         annotations=types.ToolAnnotations(
             read_only_hint=True,
             destructive_hint=False,
@@ -97,10 +99,11 @@ def _tool(spec: ToolSpec) -> types.Tool:
     )
 
 
-def _result(result: ToolResult) -> types.CallToolResult:
+def _result(result: ToolResult, structured: bool) -> types.CallToolResult:
     content: list[types.ContentBlock] = [types.TextContent(type="text", text=result.text)]
-    content.extend(types.ResourceLink(uri=uri, name=uri.rsplit("/", 1)[-1]) for uri in result.links)
-    return types.CallToolResult(content=content, structured_content=result.structured)
+    return types.CallToolResult(
+        content=content, structured_content=result.structured if structured else None
+    )
 
 
 def _error(message: str) -> types.CallToolResult:
@@ -139,13 +142,13 @@ class InprocBackend:
         return resources.read_resource(self._base, uri)
 
 
-def build_server(base: ToolContext) -> Server[None]:
+def build_server(base: ToolContext, *, structured: bool = False) -> Server[None]:
     """MCP server exposing the registered tools and cw:// resources over a base context."""
-    return build_backend_server(InprocBackend(base))
+    return build_backend_server(InprocBackend(base), structured=structured)
 
 
-def build_backend_server(backend: ToolBackend) -> Server[None]:
-    """MCP server whose tool calls and resource reads go through the given backend."""
+def build_backend_server(backend: ToolBackend, *, structured: bool = False) -> Server[None]:
+    """MCP server routing tools and resources through a backend; `structured` adds the typed payload for eval."""
     if len(TOOLS) > MAX_TOOLS:
         raise RuntimeError(f"{len(TOOLS)} tools registered; the limit is {MAX_TOOLS}")
     tracker = RootsTracker()
@@ -166,7 +169,7 @@ def build_backend_server(backend: ToolBackend) -> Server[None]:
             return _error(f"bad arguments: {exc.error_count()} problem(s)")
         roots = await tracker.current(ctx.session, ctx.request_id)
         result = await anyio.to_thread.run_sync(backend.run_tool, params.name, arguments, roots)
-        return _result(result)
+        return _result(result, structured)
 
     async def list_resources(
         ctx: ToolRequest, params: types.PaginatedRequestParams | None
@@ -227,7 +230,7 @@ def build_backend_server(backend: ToolBackend) -> Server[None]:
 
 
 async def serve_backend(backend: ToolBackend) -> None:
-    server = build_backend_server(backend)
+    server = build_backend_server(backend, structured=os.environ.get(STRUCTURED_ENV) == "1")
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 

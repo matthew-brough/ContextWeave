@@ -6,13 +6,7 @@ from dataclasses import dataclass
 from contextweave.compact.lossy import prepare_lossy
 from contextweave.compact.rules import compact_items
 from contextweave.compact.sources import SourceCache
-from contextweave.core.budget import (
-    Ceiling,
-    Estimator,
-    bytes35,
-    measure_payload,
-    serialize_structured,
-)
+from contextweave.core.budget import Ceiling, Estimator, bytes35
 from contextweave.core.errors import DegradedEntry, ErrorEntry, OmittedEntry, cap_omitted
 from contextweave.core.refs import (
     ByteAnchor,
@@ -39,7 +33,7 @@ from contextweave.retrieve.pack import (
     PlanWire,
     RrfWire,
 )
-from contextweave.retrieve.pack_text import TextRender, render_pack_text
+from contextweave.retrieve.pack_text import TextRender, item_lines, render_pack_text
 from contextweave.retrieve.plan import DEFAULT_PLAN
 
 STAGE_NAME = "assemble"
@@ -221,7 +215,7 @@ class Fitter:
         self.compact_envelope = False
 
     def cost(self, item: PackItem) -> int:
-        return self.estimator(serialize_structured(item.to_wire())) + self.estimator(item.text)
+        return self.estimator("\n".join(item_lines(item.to_wire())))
 
     def build(
         self, live: list[PackItem], dropped: list[PackItem], cap: int
@@ -258,7 +252,7 @@ class Fitter:
             errors=list(errors),
         )
         text = self.render(pack)
-        return pack, text, measure_payload(pack, text, self.estimator)
+        return pack, text, self.estimator(text)
 
     def trim(
         self, live: list[PackItem], dropped: list[PackItem], over: int, allow_critical: bool

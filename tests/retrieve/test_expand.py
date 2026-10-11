@@ -7,7 +7,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from retrieve_support import ingest, make_ctx
 
-from contextweave.core.budget import measure_payload
+from contextweave.core.budget import bytes35
 from contextweave.core.config import Config, GateConfig
 from contextweave.index.edges import resolve_edges
 from contextweave.index.store import Store
@@ -136,7 +136,7 @@ def test_pack_with_edges_respects_ceiling(budget: int) -> None:
             ingest(store, path, text)
         resolve_edges(store, ())
         result = search(store, Config(), "top middle leaf", SearchOptions(max_tokens=budget))
-    assert measure_payload(result.pack, result.text) <= budget
+    assert bytes35(result.text) <= budget
     assert result.pack["budget"]["served_tokens"] <= budget
 
 

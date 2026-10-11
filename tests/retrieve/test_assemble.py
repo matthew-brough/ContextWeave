@@ -4,7 +4,7 @@ from dataclasses import replace
 from pack_support import make_cand
 from retrieve_support import ingest, make_ctx
 
-from contextweave.core.budget import measure_payload
+from contextweave.core.budget import bytes35
 from contextweave.core.config import BudgetConfig, Config
 from contextweave.core.refs import PartAnchor, SymbolAnchor, parse_ref
 from contextweave.index.store import Store
@@ -14,7 +14,7 @@ from contextweave.retrieve.hydrate import load_file_candidates
 from contextweave.retrieve.ladder import LADDER, next_rung
 from contextweave.retrieve.pack import PackItem
 
-BODY = "    total = 0\n" * 40
+BODY = "    total = 0\n" * 120
 
 
 def seed(store: Store) -> None:
@@ -80,7 +80,7 @@ def test_pack_shape_and_budget_counts_text(store: Store) -> None:
     assert pack["budget"]["ceiling"] == 6000
     assert pack["budget"]["truncated"] is False
     assert "hint" not in pack["budget"]
-    assert pack["budget"]["served_tokens"] >= measure_payload(pack, result.text)
+    assert pack["budget"]["served_tokens"] >= bytes35(result.text)
     assert pack["plan"]["devices"] == {"embed": "none", "classify": "none"}
 
 
@@ -92,7 +92,7 @@ def test_over_ceiling_trims_lowest_final_to_refs(store: Store) -> None:
     pack = result.pack
     assert pack["budget"]["truncated"] is True
     assert "scope" in pack["budget"].get("hint", "")
-    assert measure_payload(pack, result.text) <= MIN_MAX_TOKENS
+    assert bytes35(result.text) <= MIN_MAX_TOKENS
     served = {item["ref"] for item in pack["items"]}
     omitted = {entry["ref"] for entry in result.omitted}
     assert omitted
@@ -114,7 +114,7 @@ def test_signature_rung_precedes_ref_and_is_flagged_by_rep(store: Store) -> None
     sig = next(i for i in result.pack["items"] if i["rep"] == "signature")
     assert sig["text"].startswith("def ")
     assert sig["synthesized"] is False
-    assert measure_payload(result.pack, result.text) <= 1100
+    assert bytes35(result.text) <= 1100
 
 
 def test_critical_items_stop_at_signature_before_ref(store: Store) -> None:
@@ -160,7 +160,7 @@ def test_tiny_max_tokens_is_raised_with_error(store: Store) -> None:
     result = AssembleStage().assemble(ctx, with_final(all_cands(store), [1, 1, 1]))
     assert result.pack["budget"]["ceiling"] == MIN_MAX_TOKENS
     assert [e["code"] for e in result.pack["errors"]] == ["max_tokens_raised"]
-    assert measure_payload(result.pack, result.text) <= MIN_MAX_TOKENS
+    assert bytes35(result.text) <= MIN_MAX_TOKENS
 
 
 def test_vanished_source_is_degraded_not_raised(store: Store) -> None:

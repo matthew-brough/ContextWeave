@@ -1,11 +1,8 @@
-import json
-
 from contextweave.core.budget import (
     DEFAULT_ESTIMATOR,
     Ceiling,
     bytes35,
     estimators,
-    measure_payload,
 )
 
 
@@ -19,18 +16,6 @@ def test_bytes35_math() -> None:
 
 def test_registry_default() -> None:
     assert estimators.get(DEFAULT_ESTIMATOR) is bytes35
-
-
-def test_envelope_counted() -> None:
-    structured = {"b": 1, "a": ["x"]}
-    compact = json.dumps({"a": ["x"], "b": 1}, separators=(",", ":"))
-    text = "hello world"
-    assert measure_payload(structured, text) == bytes35(compact) + bytes35(text)
-    assert measure_payload(structured, text) > measure_payload(structured, "")
-
-
-def test_custom_estimator() -> None:
-    assert measure_payload({}, "abc", len) == len("{}") + 3
 
 
 def test_ceiling() -> None:

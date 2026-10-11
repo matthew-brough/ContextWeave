@@ -6,7 +6,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from retrieve_support import ingest
 
-from contextweave.core.budget import measure_payload
+from contextweave.core.budget import bytes35
 from contextweave.core.config import Config, PipelineConfig
 from contextweave.core.refs import parse_ref, project_key
 from contextweave.index.store import Store
@@ -206,7 +206,7 @@ def test_output_never_exceeds_ceiling(
         finally:
             store.close()
     pack = result.pack
-    assert measure_payload(pack, result.text) <= budget
+    assert bytes35(result.text) <= budget
     assert pack["budget"]["ceiling"] == budget
     assert pack["budget"]["served_tokens"] <= budget
     assert len(pack["omitted"]) <= Config().budget.omitted_max

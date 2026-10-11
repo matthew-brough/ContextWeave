@@ -5,8 +5,8 @@ from compact_support import ingest, resolve_ref
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from contextweave.core.budget import measure_payload
-from contextweave.core.config import Config
+from contextweave.core.budget import bytes35
+from contextweave.core.config import BudgetConfig, Config
 from contextweave.core.refs import pack_omitted_uri, parse_ref, project_key
 from contextweave.index.store import Store
 from contextweave.retrieve.assemble import MIN_MAX_TOKENS
@@ -48,7 +48,7 @@ def test_ceiling_holds_with_compaction_enabled(files: int, lines: int, budget: i
         store = corpus(Path(directory), files, lines)
         try:
             result = search(store, Config(), "handler value", SearchOptions(max_tokens=budget))
-            assert measure_payload(result.pack, result.text) <= budget
+            assert bytes35(result.text) <= budget
             assert result.pack["budget"]["served_tokens"] <= budget
             check_omitted(store, result)
             for item in result.pack["items"]:
@@ -59,10 +59,11 @@ def test_ceiling_holds_with_compaction_enabled(files: int, lines: int, budget: i
 
 def test_overflow_tail_when_more_than_cap_are_omitted() -> None:
     with tempfile.TemporaryDirectory() as directory:
-        store = corpus(Path(directory), 90, 3)
+        store = corpus(Path(directory), 90, 150)
+        config = Config(budget=BudgetConfig(omitted_max=4))
         try:
-            result = search(store, Config(), "handler value", SearchOptions(max_tokens=700))
-            assert measure_payload(result.pack, result.text) <= 700
+            result = search(store, config, "handler value", SearchOptions(max_tokens=700))
+            assert bytes35(result.text) <= 700
             assert result.pack["omitted"][-1]["reason"] == "overflow"
             assert result.pack["budget"]["truncated"] is True
             check_omitted(store, result)

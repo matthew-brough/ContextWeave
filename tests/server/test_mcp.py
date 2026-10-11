@@ -13,9 +13,11 @@ from contextweave.server.context import ToolContext
 from contextweave.server.mcp import build_server
 
 
-def drive(context: ToolContext, action: Callable[[Client], Awaitable[None]]) -> None:
+def drive(
+    context: ToolContext, action: Callable[[Client], Awaitable[None]], *, typed: bool = True
+) -> None:
     async def main() -> None:
-        async with Client(build_server(context)) as client:
+        async with Client(build_server(context, structured=typed)) as client:
             await action(client)
 
     anyio.run(main)
@@ -41,10 +43,23 @@ def test_list_tools(context: ToolContext) -> None:
         assert len(listed.tools) <= 10
         for tool in listed.tools:
             assert tool.annotations is not None and tool.annotations.read_only_hint is True
-            assert tool.output_schema is not None
+            assert tool.output_schema is None
             assert tool.input_schema["type"] == "object"
 
-    drive(context, action)
+    drive(context, action, typed=False)
+
+
+def test_results_are_one_text_block(context: ToolContext) -> None:
+    async def action(client: Client) -> None:
+        symbol = await client.call_tool("get_symbol", {"name": "top_level"})
+        assert not symbol.is_error
+        assert symbol.structured_content is None
+        (block,) = symbol.content
+        assert isinstance(block, types.TextContent)
+        assert "== sample.py ==" in block.text and "top_level" in block.text
+        assert "cw://" not in block.text
+
+    drive(context, action, typed=False)
 
 
 def test_call_each_tool_validates_structured_content(context: ToolContext, key: str) -> None:
@@ -52,10 +67,10 @@ def test_call_each_tool_validates_structured_content(context: ToolContext, key: 
         symbol = await client.call_tool("get_symbol", {"name": "top_level"})
         payload = structured(symbol)
         assert payload["found"] is True
-        text = [block for block in symbol.content if isinstance(block, types.TextContent)]
-        assert text and "top_level" in text[0].text
-        links = [block for block in symbol.content if isinstance(block, types.ResourceLink)]
-        assert links and all(link.uri.startswith(f"cw://{key}/") for link in links)
+        symbols = payload["symbols"]
+        assert isinstance(symbols, list) and isinstance(symbols[0], dict)
+        ref = str(symbols[0]["ref"])
+        assert ref.startswith(f"cw://{key}/")
 
         outline = structured(await client.call_tool("file_outline", {"path": "sample.py"}))
         assert outline["profile"] == "symbols"
@@ -68,7 +83,6 @@ def test_call_each_tool_validates_structured_content(context: ToolContext, key: 
             )
         )
         assert query["matches"]
-        ref = links[0].uri
         expanded = structured(await client.call_tool("expand", {"ref": ref}))
         assert expanded["status"] == "ok"
 
@@ -97,7 +111,9 @@ def test_roots_resolve_project(
         return types.ListRootsResult(roots=[types.Root(uri=FileUrl(project.as_uri()))])
 
     async def main() -> None:
-        async with Client(build_server(base), list_roots_callback=roots, mode="legacy") as client:
+        async with Client(
+            build_server(base, structured=True), list_roots_callback=roots, mode="legacy"
+        ) as client:
             payload = structured(await client.call_tool("get_symbol", {"name": "top_level"}))
             project_echo = payload["project"]
             assert isinstance(project_echo, dict) and project_echo["via"] == "roots"
@@ -160,7 +176,7 @@ def test_pack_resource_for_overflowed_omitted(context: ToolContext, key: str) ->
 
     async def action(client: Client) -> None:
         payload = structured(
-            await client.call_tool("search_symbols", {"query": "e", "max_tokens": 400})
+            await client.call_tool("search_symbols", {"query": "e", "max_tokens": 60})
         )
         omitted = payload["omitted"]
         assert isinstance(omitted, list)

@@ -16,6 +16,7 @@ from contextweave.agents.codex import CodexAdapter
 from contextweave.core.config import Config
 from contextweave.core.refs import project_key
 from contextweave.core.types import JSON
+from contextweave.eval.mcp_adapters import STRUCTURED_ENV
 from contextweave.index.indexer import index_project
 from contextweave.index.projects import ProjectRegistry
 
@@ -40,7 +41,10 @@ class Shared:
 
     def params(self, cwd: Path) -> StdioServerParameters:
         return StdioServerParameters(
-            command=sys.executable, args=["-c", SERVE_INPROC], env=self.env, cwd=cwd
+            command=sys.executable,
+            args=["-c", SERVE_INPROC],
+            env={**self.env, STRUCTURED_ENV: "1"},
+            cwd=cwd,
         )
 
 

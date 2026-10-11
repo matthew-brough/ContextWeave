@@ -67,7 +67,7 @@ def _degrade(result: ToolResult) -> ToolResult:
     structured = dict(result.structured)
     degraded = structured.get("degraded")
     structured["degraded"] = [*degraded, entry] if isinstance(degraded, list) else [entry]
-    return ToolResult(structured, result.text, result.links)
+    return ToolResult(structured, f"{result.text}\n~daemon {DEGRADED_REASON}")
 
 
 def shim_backend(context: ToolContext, client: IpcClient, ensure: Ensure) -> DaemonBackend:

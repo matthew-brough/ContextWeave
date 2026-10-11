@@ -92,7 +92,7 @@ def test_shim_end_to_end_and_reconnect_after_kill(live: dict[str, str], project:
         return found["found"]
 
     async def main() -> None:
-        async with Client(build_backend_server(backend)) as client:
+        async with Client(build_backend_server(backend, structured=True)) as client:
             assert await lookup(client) is True
             pids.append(read_pid(live))
             first = pids[0]

@@ -5,17 +5,17 @@ from contextweave.server.tools import ToolResult
 
 
 def encode_tool_result(result: ToolResult) -> JSON:
-    return {"structured": result.structured, "text": result.text, "links": list(result.links)}
+    return {"structured": result.structured, "text": result.text}
 
 
 def decode_tool_result(value: JSON) -> ToolResult:
     """Rebuild a ToolResult from its wire form; RemoteError when the shape is wrong."""
     if not isinstance(value, dict):
         raise RemoteError("bad_response", "tool result is not a map")
-    structured, text, links = value.get("structured"), value.get("text"), value.get("links")
-    if not isinstance(structured, dict) or not isinstance(text, str) or not isinstance(links, list):
+    structured, text = value.get("structured"), value.get("text")
+    if not isinstance(structured, dict) or not isinstance(text, str):
         raise RemoteError("bad_response", "tool result fields have the wrong types")
-    return ToolResult(structured, text, tuple(link for link in links if isinstance(link, str)))
+    return ToolResult(structured, text)
 
 
 def encode_resources(items: list[ResourceInfo]) -> JSON:

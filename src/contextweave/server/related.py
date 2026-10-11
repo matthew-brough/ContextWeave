@@ -45,15 +45,30 @@ def _tail(payload: Common) -> list[str]:
     return lines
 
 
+def _edge_where(edge: RelatedEdge) -> str:
+    if "path" in edge:
+        return edge["path"]
+    if "ref" in edge:
+        try:
+            return parse_ref(edge["ref"]).path
+        except RefError:
+            return edge["ref"]
+    return ""
+
+
 def render_related(payload: RelatedPayload) -> str:
-    """Plain-text fallback: one line per edge, candidates when the target was ambiguous."""
+    """Agent-facing text: one line per edge, candidates when the target was ambiguous."""
     lines = _head(payload)
+    if not payload["found"] and not payload.get("candidates"):
+        lines.append("not found")
     for item in payload.get("candidates", []):
-        lines.append(f"? {item['kind']} {item['qualified_name']} {item['path']} {item['ref']}")
-    for edge in payload["edges"]:
-        where = edge.get("ref") or edge.get("path") or ""
         lines.append(
-            f"{'  ' * (edge['hops'] - 1)}{edge['rel']} {edge['name']} [{edge['resolution']}] {where}".rstrip()
+            f"? {item['kind']} {item['qualified_name']} {item['path']}:{item['start_line']}"
+        )
+    for edge in payload["edges"]:
+        resolution = "" if edge["resolution"] == "exact" else f" [{edge['resolution']}]"
+        lines.append(
+            f"{'  ' * (edge['hops'] - 1)}{edge['rel']} {edge['name']}{resolution} {_edge_where(edge)}".rstrip()
         )
     lines.extend(_tail(payload))
     return "\n".join(lines)
