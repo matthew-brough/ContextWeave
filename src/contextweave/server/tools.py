@@ -718,8 +718,8 @@ def _ast_query(call: Call[AstQueryPayload], args: AstQueryArgs) -> AstQueryPaylo
                     Match(
                         capture=capture,
                         node_type=node.type,
-                        start_line=node.start_point.row + 1,
-                        end_line=node.end_point.row + 1,
+                        start_line=node.start_point[0] + 1,
+                        end_line=node.end_point[0] + 1,
                         start_byte=node.start_byte,
                         end_byte=node.end_byte,
                         text=parsed.text(node),

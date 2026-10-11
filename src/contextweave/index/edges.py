@@ -19,6 +19,8 @@ CONFIG_CAP = 4
 CALL_KINDS = frozenset({"function", "method", "class", "struct", "handler", "type"})
 TYPE_KINDS = frozenset({"class", "struct", "interface", "enum", "type"})
 INTERFACE_NAME = re.compile(r"^I[A-Z]")
+TABLE_MEMBER = re.compile(r"([\w.]+)[.:](\w+)")
+MEMBER_KINDS = frozenset({"function", "method"})
 RANK: dict[Resolution, int] = {"exact": 0, "import": 1, "event": 2, "name": 3}
 
 
@@ -86,6 +88,7 @@ class Facts:
     scopes: dict[int, Scope] = field(default_factory=dict[int, Scope])
     base_map: dict[int, list[Sym]] = field(default_factory=dict[int, list[Sym]])
     bases_built: bool = False
+    by_member: dict[str, list[Sym]] = field(default_factory=dict[str, list[Sym]])
 
     def is_test(self, file_id: int) -> bool:
         """True when the file matches index.test_globs."""
@@ -187,6 +190,7 @@ def load_facts(
     symbols: dict[int, Sym] = {}
     by_name: dict[str, list[Sym]] = defaultdict(list)
     by_file: dict[int, list[Sym]] = defaultdict(list)
+    by_member: dict[str, list[Sym]] = defaultdict(list)
     for row in store.query(
         "SELECT id, file_id, name, qualified_name, kind, parent, start_byte FROM symbols"
         " ORDER BY file_id, start_byte, id"
@@ -204,6 +208,8 @@ def load_facts(
         symbols[sym.id] = sym
         by_name[sym.name].append(sym)
         by_file[sym.file_id].append(sym)
+        if sym.kind in MEMBER_KINDS and (split := _table_member(sym.name)) is not None:
+            by_member[split[1]].append(sym)
     refs = [
         Ref(
             int(str(row[0])),
@@ -258,7 +264,14 @@ def load_facts(
         events or EventsConfig(),
         handlers,
         load_sides(context),
+        by_member=by_member,
     )
+
+
+def _table_member(name: str) -> tuple[str, str] | None:
+    """Split a dotted name like Lua's `vRP.log` / `M:save` into (table, member)."""
+    found = TABLE_MEMBER.fullmatch(name)
+    return None if found is None else (found[1], found[2])
 
 
 def _names(value: object) -> list[str]:
@@ -331,6 +344,8 @@ def _targets_of(
     facts: Facts, ref: Ref, origin: Sym | None, kinds: frozenset[str]
 ) -> list[tuple[Sym, Resolution]]:
     candidates = _named(facts, ref.name, kinds)
+    if ref.qualifier is not None and not ref.is_self:
+        candidates += [sym for sym in facts.by_member.get(ref.name, ()) if sym.kind in kinds]
     if not candidates:
         return []
     scope = facts.scope(ref.file_id)
@@ -417,17 +432,28 @@ def _qualified_targets(
     owned = [
         sym
         for sym in candidates
-        if sym.parent is not None and (sym.parent == qualifier or sym.parent.split(".")[-1] == tail)
+        if (owner := _owner_name(sym)) is not None
+        and (owner == qualifier or owner.split(".")[-1] == tail)
     ]
     same = [sym for sym in owned if sym.file_id == ref.file_id]
     if same:
         return _grade(same, "name")
+    named = [sym for sym in owned if _owner_name(sym) == qualifier]
+    if len(named) == 1:
+        return _grade(named, "name")
     if owned:
         return _global_matches(owned)
     typed = [sym for sym in facts.by_name.get(tail, ()) if sym.kind in TYPE_KINDS]
     if typed:
         return []
     return _global_matches([sym for sym in candidates if sym.kind in {"function", "method"}])
+
+
+def _owner_name(sym: Sym) -> str | None:
+    if sym.parent is not None:
+        return sym.parent
+    split = _table_member(sym.name)
+    return None if split is None else split[0]
 
 
 def _edge(

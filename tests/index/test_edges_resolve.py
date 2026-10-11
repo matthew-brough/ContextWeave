@@ -121,6 +121,23 @@ def test_lua_require_resolves_dotted_module(tmp_path: Path) -> None:
         },
     )
     assert ("a.lua", "imports", "lib/b.lua", "exact") in edges
+    assert ("f", "calls", "M.g", "exact") in edges
+
+
+def test_lua_table_member_calls_resolve(tmp_path: Path) -> None:
+    edges = build_edges(
+        tmp_path,
+        {
+            "base.lua": (
+                "vRP = {}\nfunction vRP.log(text) print(text) end\n"
+                "function vRP:save() end\nfunction log() end\n"
+            ),
+            "user.lua": "local function pay() vRP.log('x') vRP:save() end\n",
+        },
+    )
+    assert ("pay", "calls", "vRP.log", "exact") in edges
+    assert ("pay", "calls", "vRP:save", "exact") in edges
+    assert ("pay", "calls", "log", "exact") not in edges
 
 
 def test_csharp_base_list_splits_class_and_interface(tmp_path: Path) -> None:
