@@ -33,9 +33,9 @@ slot uses is the endpoint its calls go to.
 
 | slot | device | command |
 |---|---|---|
-| embed | gpu | `llama-server -hf jinaai/jina-code-embeddings-1.5b-GGUF:Q8_0 --embeddings --pooling last -ngl 99 --port 8770` |
+| embed | gpu | `llama-server -hf jinaai/jina-code-embeddings-1.5b-GGUF:Q8_0 --embeddings --pooling last -c 32768 -np 4 -b 8192 -ub 8192 -ngl 99 --cache-ram 0 --port 8770` |
 | embed | cpu | same, `-ngl 0 --port 8771` |
-| annotate | gpu | `llama-server -hf unsloth/Qwen3.5-4B-GGUF:Q4_K_M --jinja -ngl 99 --port 8772` |
+| annotate | gpu | `llama-server -hf unsloth/Qwen3.5-4B-GGUF:Q4_K_M --jinja -c 32768 -np 4 -ngl 99 --cache-ram 0 --port 8772` |
 | annotate | cpu | same, `-ngl 0 --port 8773` |
 | classify | gpu | `KEV_QUANT=int8 KEV_GRAPH_BANK_WIDTH=1024 KEV_GRAPH_TOKENS=8192 KEV_GRAPH_ROWS=16 KEV_GRAPH_STATES=8 uv run python -m kev.serve --run jaredpalmer/kev-4b --device cuda --port 8765` (in the fork checkout) |
 
@@ -45,6 +45,14 @@ the model (about 75 s); later starts load the saved build in about 21 s.
 
 - Embed needs `--pooling last` (Jina uses last-token pooling); the
   `embed.pooling` line catches a server started without it.
+- Pass `--cache-ram 0`. The default host prompt cache is 8 GiB per server and every
+  chunk is unique, so it only fills RAM (two servers reached ~20 GB under WSL2).
+- Embed needs `-ub` >= the per-slot context (8192) so one doc fits a single ubatch, and
+  `-c` = slots × 8192. With `-c 8192` the slots share one cache and a doc batch fails with
+  a 500 "Context size has been exceeded" that marks the device down.
+- Annotate `-np` should equal `models.annotate.parallel` (4), with `-c` = slots × 8192.
+  With a smaller `-c` all slots share one KV cache and concurrent chunks fail with
+  "Context size has been exceeded" (`docs/results/annotate-parallel.md`).
 - `KEV_GRAPH_STATES` should equal `models.classify.parallel` (8), which is
   also `gate.window`.
 - Pin the CPU servers to separate cores with `taskset -c` and set `-t`/`-tb`
@@ -110,7 +118,7 @@ Options: `--json` machine output, `--runs`, `--annotate-chunks`,
 `--classify-runs`, `--vram-mib` (default 8192), `--pipeline-budget-ms`
 (default 1000), `--probe-deadline-ms` (default 120000, raised so slow CPU calls
 finish and can be measured; results are still judged against the configured
-`models.deadline_ms` and `models.annotate.deadline_ms`).
+`models.warn_ms` and `models.annotate.warn_ms`).
 
 Exit code is 0 when at least one line was measured, 1 when nothing could be
 probed. Lines for unreachable providers are `unavailable`, never an error.
@@ -128,13 +136,13 @@ Status per line: `ok`, `warn` (measured but outside a limit), `unavailable`
 | `embed.query` | single short query latency: cold, p50, p95 per device |
 | `embed.pooling` | cosine vs bundled reference vectors >= 0.99; `warn` means the server pools differently (missing `--pooling last`); `skipped` until references are bundled |
 | `embed.doc_batch` | 16-doc batch p50 and docs/s (bulk indexing speed) |
-| `annotate.rate` | chunks/s, p50/p95, calls over `annotate.deadline_ms`, parse failures |
+| `annotate.rate` | chunks/s, p50/p95, calls over `annotate.warn_ms`, parse failures |
 | `classify.<family>.r<rung>.<build>` | gate latency p50 per window size (1, 5, 10, 20, `gate.window`) with `gate.card_tokens` states, GPU peak MiB |
 | `classify.<...>.fit` | per-criterion verdicts (pass, fail, pending) |
 | `classify.<...>.protocol` | `wire_source`, `served_models`, `serves_model`, `concurrent_states`, `dynamic_options` |
 
 Fit criteria the probe can measure: gate p50 at `gate.window` (GPU) or at
-window >= 10 (CPU, rung 6) within `min(deadline_ms, 1000 ms)`, and peak GPU
+window >= 10 (CPU, rung 6) within `min(warn_ms, 1000 ms)`, and peak GPU
 memory <= 8192 MiB. Quality (top agreement >= 95%, recall drop <= 2 pts), ECE
 and full pipeline p50 are always `pending`: they need the T20 eval. A rung
 reported as fitting is a candidate, not a winner. If every rung of every family
@@ -189,8 +197,8 @@ and build id for each classify rung tried.
   whether `query_prefix`, `doc_prefix` and `memory_prefix` stay as shipped. Also
   confirm `dim` (1536 vs 512) against `embed.doc_batch` throughput and index
   size.
-- T19 `models.annotate.deadline_ms` (default 30000, separate from the 1500 ms
-  query-time `models.deadline_ms`): the probe prints the p95-based figure
+- T19 `models.annotate.warn_ms` (default 30000, separate from the 1500 ms
+  query-time `models.warn_ms`; hard caps are `deadline_ms`, loose by design): the probe prints the p95-based figure
   (p95 x 1.25 rounded up to 500 ms) from `annotate.rate` cpu. GPU
   `chunks_per_s` gives the `cw init` ETA.
 - T20 classify: decided 2026-10-10 (SPEC §B.6). Kev-4B on the fork's
