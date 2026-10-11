@@ -30,6 +30,27 @@ class ModelTransportError(ModelError):
     code_value = "model_transport"
 
 
+class ModelRequestError(ModelError):
+    """The endpoint rejected this one request (4xx); the device itself is healthy."""
+
+    code_value = "model_rejected"
+
+
+class ModelContextError(ModelRequestError):
+    """The request needed more tokens than the server context holds."""
+
+    code_value = "model_context"
+
+    def __init__(self, message: str, *, needed: int, available: int) -> None:
+        super().__init__(message)
+        self.needed = needed
+        self.available = available
+
+    def fit_ratio(self, margin: float = 0.85) -> float:
+        """Fraction of the input to keep so the retry fits, with headroom for template and output."""
+        return min(self.available / self.needed, 1.0) * margin
+
+
 class ModelResponseError(ModelError):
     """The model endpoint answered with a payload of the wrong shape."""
 

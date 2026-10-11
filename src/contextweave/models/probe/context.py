@@ -55,8 +55,8 @@ class ProbeEnv:
     """Everything a probe needs: slots to call, configured limits, and injectable system access."""
 
     models: ModelsConfig
-    configured_deadline_ms: int
-    configured_annotate_deadline_ms: int
+    configured_warn_ms: int
+    configured_annotate_warn_ms: int
     gate: GateConfig
     options: ProbeOptions
     slots: ModelSlots
@@ -68,4 +68,4 @@ class ProbeEnv:
 
     @property
     def gate_budget_ms(self) -> float:
-        return float(min(self.configured_deadline_ms, self.options.pipeline_budget_ms))
+        return float(min(self.configured_warn_ms, self.options.pipeline_budget_ms))

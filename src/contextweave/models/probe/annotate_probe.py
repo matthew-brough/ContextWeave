@@ -73,7 +73,7 @@ def _rate_line(
     latency = summarize(samples)
     total_ms = sum(samples)
     rate = rate_per_s(len(samples), total_ms)
-    deadline = env.configured_annotate_deadline_ms
+    deadline = env.configured_annotate_warn_ms
     over = sum(1 for sample in samples if sample > deadline)
     metrics = {
         "chunks": float(len(samples)),
@@ -90,7 +90,7 @@ def _rate_line(
         metrics["gpu_used_mib"] = gpu_used
     summary = (
         f"{rate:.2f} chunks/s, p50 {latency.p50_ms:.0f} ms, p95 {latency.p95_ms:.0f} ms, "
-        f"{over}/{len(samples)} over annotate.deadline_ms {deadline}, {parse_failures} parse failures"
+        f"{over}/{len(samples)} over annotate.warn_ms {deadline}, {parse_failures} parse failures"
     )
     status = Status.WARN if over or parse_failures else Status.OK
     return Line("annotate.rate", name, status, summary, metrics)

@@ -6,7 +6,7 @@ from fake_embed import FakeEmbed
 
 from contextweave.core.config import AnnotateConfig, ClassifyConfig, Config, ModelsConfig
 from contextweave.core.types import JSON
-from contextweave.models.errors import ModelTransportError
+from contextweave.models.errors import ModelContextError, ModelTransportError
 from contextweave.models.providers import Device, Message
 from contextweave.models.slots import ModelSlots, default_registries
 
@@ -21,6 +21,7 @@ class FakeAnnotate:
     down: bool = False
     garbage: Mapping[str, JSON] | None = None
     garbage_for: str | None = None
+    context_chars: int | None = None
 
     @property
     def devices(self) -> tuple[Device, ...]:
@@ -36,6 +37,10 @@ class FakeAnnotate:
             raise ModelTransportError("fake annotate is down")
         user = prompt_messages[-1].content
         self.prompts.append(user)
+        if self.context_chars is not None and len(user) > self.context_chars:
+            raise ModelContextError(
+                "fake context overflow", needed=len(user), available=self.context_chars
+            )
         if self.garbage is not None and (self.garbage_for is None or self.garbage_for in user):
             return self.garbage
         match = NAME_LINE.search(user)

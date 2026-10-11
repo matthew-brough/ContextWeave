@@ -120,6 +120,7 @@ class EmbedConfig:
     doc_prefix: str = "Candidate code snippet:\n"
     memory_prefix: str = ""
     query_device: str = "cpu"
+    batch_deadline_ms: int = 300000
     devices: tuple[str, ...] = ("gpu", "cpu")
     gpu: DeviceEndpointConfig = field(default_factory=_local(8770))
     cpu: DeviceEndpointConfig = field(default_factory=_local(8771))
@@ -131,7 +132,10 @@ class AnnotateConfig:
     model: str = "unsloth/Qwen3.5-4B-GGUF:Q4_K_M"
     think: bool = False
     prompt_version: int = 1
-    deadline_ms: int = 30000
+    warn_ms: int = 30000
+    deadline_ms: int = 600000
+    parallel: int = 4
+    max_output_tokens: int = 512
     devices: tuple[str, ...] = ("gpu", "cpu")
     gpu: DeviceEndpointConfig = field(default_factory=_local(8772))
     cpu: DeviceEndpointConfig = field(default_factory=_local(8773))
@@ -151,9 +155,11 @@ class ClassifyConfig:
 
 @dataclass(frozen=True, slots=True)
 class ModelsConfig:
-    deadline_ms: int = 1500
+    warn_ms: int = 1500
+    deadline_ms: int = 15000
     retry_after_s: int = 60
     skip_warn: float = 0.05
+    slow_warn: float = 0.25
     embed: EmbedConfig = field(default_factory=EmbedConfig)
     annotate: AnnotateConfig = field(default_factory=AnnotateConfig)
     classify: ClassifyConfig = field(default_factory=ClassifyConfig)

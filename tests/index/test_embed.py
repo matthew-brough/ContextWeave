@@ -1,4 +1,5 @@
 import json
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -9,10 +10,17 @@ from contextweave.core.config import Config
 from contextweave.core.types import JSON
 from contextweave.index.chunk_tokens import embed_tokenizer, model_slug, tokenizer_file
 from contextweave.index.derived import DerivedCache
-from contextweave.index.embed import embed_model_id, embed_project, truncate_to_tokens
+from contextweave.index.embed import (
+    embed_fitting,
+    embed_model_id,
+    embed_project,
+    truncate_to_tokens,
+)
 from contextweave.index.indexer import index_project
 from contextweave.index.store import Store
 from contextweave.index.vectors import CODE, find_space, spaces
+from contextweave.models.errors import ModelContextError
+from contextweave.models.providers import Device, EmbedKind
 
 TWO_FUNCTIONS = (
     "def parse_token(raw):\n    return raw.strip()\n\n\ndef render_page(items):\n    return items\n"
@@ -209,3 +217,30 @@ def test_annotated_chunks_get_an_annot_space(tmp_path: Path, cache: DerivedCache
         assert report.pending == 0
         assert sorted(space.kind for space in spaces(store)) == ["annot", "code"]
         assert all(space.status == "live" for space in spaces(store))
+
+
+class ContextLimitedEmbed:
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self.calls: list[list[str]] = []
+
+    @property
+    def devices(self) -> tuple[Device, ...]:
+        return (Device.CPU,)
+
+    def set_device(self, device: Device) -> None:
+        return None
+
+    def embed(self, texts: Sequence[str], *, kind: EmbedKind) -> list[list[float]]:
+        self.calls.append(list(texts))
+        longest = max(len(text) for text in texts)
+        if longest > self.limit:
+            raise ModelContextError("overflow", needed=longest, available=self.limit)
+        return [[float(len(text))] for text in texts]
+
+
+def test_embed_fitting_splits_batch_and_recuts_the_long_item() -> None:
+    client = ContextLimitedEmbed(100)
+    vectors = embed_fitting(client, ["short", "x" * 400, "tiny"], EmbedKind.DOC)
+    assert vectors == [[5.0], [float(int(400 * 0.25 * 0.85))], [4.0]]
+    assert [len(call) for call in client.calls] == [3, 1, 1, 1, 1]

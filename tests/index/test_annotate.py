@@ -8,6 +8,7 @@ from fake_embed import FakeEmbed, embed_config
 
 from contextweave.core.config import Config
 from contextweave.index.annotate import (
+    MAX_CONSECUTIVE_FAULTS,
     AnnotateProgress,
     annotate_lines,
     annotate_project,
@@ -190,7 +191,8 @@ def test_all_malformed_stops_after_limit(rig: Rig) -> None:
     rig.annotate.garbage = {"nope": 1}
     report = index_project(rig.root, rig.config, slots=rig.slots, cache=rig.cache)
     assert report.annotate is not None
-    assert len(rig.annotate.prompts) == 8
+    in_flight = rig.config.models.annotate.parallel - 1
+    assert len(rig.annotate.prompts) == MAX_CONSECUTIVE_FAULTS + in_flight
     assert report.annotate.pending == chunk_count(rig)
 
 
@@ -306,3 +308,44 @@ def test_annot_space_built_after_annotate_and_embed(rig: Rig) -> None:
         annot = [space for space in spaces(store) if space.kind == ANNOT]
         assert len(annot) == 1 and annot[0].status == "live"
         assert store.query(f"SELECT count(*) FROM {annot[0].name}")[0][0] == chunk_count(rig)
+
+
+class CharTokenizer:
+    def count(self, text: str) -> int:
+        return len(text)
+
+
+def test_oversized_chunk_code_is_cut_to_budget(rig: Rig) -> None:
+    tail = "TAIL_MARKER"
+    body = "\n".join(f"    step_{n} = {n}" for n in range(200))
+    (rig.root / "big.py").write_text(f"def huge():\n{body}\n    return '{tail}'\n", "utf-8")
+    index_project(rig.root, rig.config)
+    with Store.open(rig.root) as store:
+        report = annotate_project(
+            store, rig.slots, rig.cache, rig.config, tokenizer=CharTokenizer(), max_code_tokens=200
+        )
+    assert report.pending == 0
+    huge = [prompt for prompt in rig.annotate.prompts if "def huge" in prompt]
+    assert huge
+    assert tail not in huge[0]
+
+
+def test_context_overflow_is_recut_by_server_count(rig: Rig) -> None:
+    tail = "TAIL_MARKER"
+    body = "\n".join(f"    step_{n} = {n}" for n in range(100))
+    (rig.root / "big.py").write_text(f"def huge():\n{body}\n    return '{tail}'\n", "utf-8")
+    rig.annotate.context_chars = 1000
+    assert rig.index() == chunk_count(rig)
+    huge = [prompt for prompt in rig.annotate.prompts if "def huge" in prompt]
+    assert len(huge) == 2
+    assert tail in huge[0]
+    assert tail not in huge[1]
+    assert len(huge[1]) <= 1000
+
+
+def test_rejected_chunks_are_skipped_and_pass_continues(rig: Rig) -> None:
+    rig.annotate.context_chars = 10
+    annotated, cached, pending = rig.annotate_slice()
+    chunks = chunk_count(rig)
+    assert (annotated, cached, pending) == (0, 0, chunks)
+    assert len(rig.annotate.prompts) == 2 * chunks

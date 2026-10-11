@@ -14,9 +14,11 @@ from contextweave.models.decision import (
     ensure_decision_client,
 )
 from contextweave.models.errors import (
+    ModelContextError,
     ModelDeadlineError,
     ModelDisabledError,
     ModelParseError,
+    ModelRequestError,
     ModelTransportError,
     ProviderSlotError,
 )
@@ -88,6 +90,7 @@ def test_llama_chat_request_shape(models: ModelsConfig) -> None:
     }
     assert body["chat_template_kwargs"] == {"enable_thinking": True}
     assert (body["temperature"], body["seed"]) == (0, 7)
+    assert body["max_tokens"] == models.annotate.max_output_tokens
     assert body["messages"] == [
         {"role": "system", "content": "s"},
         {"role": "user", "content": "u"},
@@ -173,8 +176,34 @@ def test_timeout_maps_to_deadline_error(models: ModelsConfig) -> None:
 
 def test_deadline_is_http_timeout(models: ModelsConfig) -> None:
     rec = recorder(lambda r: ok(embeddings([1.0, 0.0, 0.0])))
-    LlamaEmbed(ctx_of(models, rec)).embed(["a"], kind=EmbedKind.DOC)
-    assert rec.requests[0].extensions["timeout"]["read"] == models.deadline_ms / 1000
+    embed = LlamaEmbed(ctx_of(models, rec))
+    embed.embed(["a"], kind=EmbedKind.QUERY)
+    embed.embed(["a"], kind=EmbedKind.DOC)
+    timeouts = [request.extensions["timeout"]["read"] for request in rec.requests]
+    assert timeouts == [models.deadline_ms / 1000, models.embed.batch_deadline_ms / 1000]
+
+
+def test_client_error_is_request_error(models: ModelsConfig) -> None:
+    rec = recorder(lambda r: httpx.Response(400, json={"error": {"message": "bad input"}}))
+    with pytest.raises(ModelRequestError, match="bad input") as caught:
+        LlamaEmbed(ctx_of(models, rec)).embed(["a"], kind=EmbedKind.DOC)
+    assert not isinstance(caught.value, ModelContextError)
+
+
+def test_context_overflow_carries_server_counts(models: ModelsConfig) -> None:
+    body = {
+        "error": {
+            "code": 400,
+            "type": "exceed_context_size_error",
+            "n_prompt_tokens": 16384,
+            "n_ctx": 8192,
+        }
+    }
+    rec = recorder(lambda r: httpx.Response(400, json=body))
+    with pytest.raises(ModelContextError) as caught:
+        LlamaEmbed(ctx_of(models, rec)).embed(["a"], kind=EmbedKind.DOC)
+    assert (caught.value.needed, caught.value.available) == (16384, 8192)
+    assert caught.value.fit_ratio() == pytest.approx(0.5 * 0.85)
 
 
 def test_error_status_is_transport_error(models: ModelsConfig) -> None:

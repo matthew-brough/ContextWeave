@@ -21,6 +21,8 @@ class HealthStatus:
     calls_in_window: int
     skip_rate: float
     warn: bool
+    slow_rate: float = 0.0
+    slow_warn: bool = False
 
 
 class SlotHealth:
@@ -36,6 +38,7 @@ class SlotHealth:
         clock: Clock,
         retry_after_s: float,
         skip_warn: float,
+        slow_warn: float = 1.0,
         window: int = WINDOW,
         loaded: bool = True,
     ) -> None:
@@ -46,12 +49,14 @@ class SlotHealth:
         self._clock = clock
         self._retry_after_s = retry_after_s
         self._skip_warn = skip_warn
+        self._slow_warn = slow_warn
         self._lock = RLock()
         self._ready: Device | None = self.chain[0] if self.chain and loaded else None
         self._down: dict[Device, float] = {}
         self._warming = False
         self._suspended = False
         self._recent: deque[bool] = deque(maxlen=window)
+        self._slow: deque[bool] = deque(maxlen=window)
         self._skips = 0
 
     @property
@@ -79,10 +84,11 @@ class SlotHealth:
                 return "device warming up"
             return "no device ready"
 
-    def record_success(self) -> None:
-        """Count a call that reached a healthy device."""
+    def record_success(self, *, slow: bool = False) -> None:
+        """Count a call that reached a healthy device; slow means it passed its warn time."""
         with self._lock:
             self._recent.append(False)
+            self._slow.append(slow)
 
     def record_unavailable(self) -> None:
         """Count a skip taken without attempting any device."""
@@ -142,13 +148,27 @@ class SlotHealth:
         """True when the rolling skip rate exceeds skip_warn."""
         return self.skip_rate() > self._skip_warn
 
+    def slow_rate(self) -> float:
+        """Fraction of completed calls over the rolling window that passed their warn time."""
+        with self._lock:
+            return sum(self._slow) / len(self._slow) if self._slow else 0.0
+
     def status(self) -> HealthStatus:
         """Snapshot for status output."""
         with self._lock:
             down = tuple(device for device in self.chain if device in self._down)
             calls = len(self._recent)
+        slow = self.slow_rate()
         return HealthStatus(
-            self.slot, self.active, down, self._skips, calls, self.skip_rate(), self.should_warn()
+            self.slot,
+            self.active,
+            down,
+            self._skips,
+            calls,
+            self.skip_rate(),
+            self.should_warn(),
+            slow,
+            slow > self._slow_warn,
         )
 
     def _candidates(self) -> list[Device]:

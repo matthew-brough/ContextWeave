@@ -51,12 +51,16 @@ def test_defaults_match_spec(tmp_path: Path, xdg: dict[str, str]) -> None:
     assert (config.daemon.idle_minutes, config.daemon.project_idle_minutes) == (30, 30)
     assert config.server.pack_cache == 20
     assert config.hooks.session_start_tokens == 400
-    assert config.models.deadline_ms == 1500
+    assert (config.models.warn_ms, config.models.deadline_ms) == (1500, 15000)
+    assert (config.models.annotate.warn_ms, config.models.annotate.deadline_ms) == (30000, 600000)
+    assert config.models.embed.batch_deadline_ms == 300000
+    assert (config.models.skip_warn, config.models.slow_warn) == (0.05, 0.25)
     assert config.models.embed.dim == 1536
     assert config.models.classify.devices == ("gpu",)
     assert config.models.classify.model == "kev-latest"
     assert config.models.classify.build_id == "kev-4b-int8-emb8"
     assert config.models.classify.parallel == 8
+    assert (config.models.annotate.parallel, config.models.annotate.max_output_tokens) == (4, 512)
     assert config.models.classify.gpu.endpoint == "http://127.0.0.1:8765"
     assert config.models.classify.cpu.endpoint == "http://127.0.0.1:8766"
     assert "TriggerClientEvent" in config.edges.events.emitters

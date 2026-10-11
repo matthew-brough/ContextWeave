@@ -62,6 +62,14 @@ class BuildContext:
     def annotate_deadline_s(self) -> float:
         return self.models.annotate.deadline_ms / 1000
 
+    @property
+    def embed_batch_deadline_s(self) -> float:
+        return self.models.embed.batch_deadline_ms / 1000
+
+    def embed_deadline_s(self, kind: EmbedKind) -> float:
+        """Hard cap of one embed call: document batches are index-time, the rest query-time."""
+        return self.embed_batch_deadline_s if kind is EmbedKind.DOC else self.deadline_s
+
 
 @runtime_checkable
 class Provider(Protocol):

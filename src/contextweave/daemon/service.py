@@ -233,6 +233,8 @@ def _status(service: DaemonService, params: Params) -> JSON:
                     "calls_in_window": health.calls_in_window,
                     "skip_rate": round(health.skip_rate, 4),
                     "warn": health.warn,
+                    "slow_rate": round(health.slow_rate, 4),
+                    "slow_warn": health.slow_warn,
                 }
             )
     return {

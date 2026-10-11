@@ -63,6 +63,7 @@ def chat_body(
     json_schema: Mapping[str, JSON],
     *,
     seed: int,
+    max_tokens: int,
 ) -> dict[str, JSON]:
     """Deterministic chat completion request constrained to a strict JSON schema."""
     return {
@@ -70,6 +71,7 @@ def chat_body(
         "messages": message_payload(prompt_messages),
         "temperature": 0,
         "seed": seed,
+        "max_tokens": max_tokens,
         "response_format": {
             "type": "json_schema",
             "json_schema": {"name": SCHEMA_NAME, "strict": True, "schema": dict(json_schema)},
@@ -112,10 +114,10 @@ class OpenAIEmbed(_RemoteDevice):
     def __init__(self, ctx: BuildContext) -> None:
         self._http = _http(ctx)
         self._config = ctx.models.embed
-        self._deadline_s = ctx.deadline_s
+        self._deadline_s = ctx.embed_deadline_s
 
     def embed(self, texts: Sequence[str], *, kind: EmbedKind) -> list[list[float]]:
-        return embed_over(self._http, self._config, texts, kind, timeout_s=self._deadline_s)
+        return embed_over(self._http, self._config, texts, kind, timeout_s=self._deadline_s(kind))
 
 
 class OpenAIAnnotate(_RemoteDevice):
@@ -124,13 +126,20 @@ class OpenAIAnnotate(_RemoteDevice):
     def __init__(self, ctx: BuildContext, settings: OpenAISettings | None = None) -> None:
         self._http = _http(ctx)
         self._model = ctx.models.annotate.model
+        self._max_tokens = ctx.models.annotate.max_output_tokens
         self._deadline_s = ctx.annotate_deadline_s
         self._settings = settings or OpenAISettings()
 
     def annotate(
         self, prompt_messages: Sequence[Message], json_schema: Mapping[str, JSON]
     ) -> Mapping[str, JSON]:
-        body = chat_body(self._model, prompt_messages, json_schema, seed=self._settings.seed)
+        body = chat_body(
+            self._model,
+            prompt_messages,
+            json_schema,
+            seed=self._settings.seed,
+            max_tokens=self._max_tokens,
+        )
         reply = self._http.post(CHAT_PATH, body, timeout_s=self._deadline_s)
         return parse_chat(reply, json_schema)
 

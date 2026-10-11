@@ -28,10 +28,12 @@ class LlamaEmbed(DeviceHttp):
             "embed", config.devices, device_table(config.gpu, config.cpu), ctx.transport
         )
         self._config = config
-        self._deadline_s = ctx.deadline_s
+        self._deadline_s = ctx.embed_deadline_s
 
     def embed(self, texts: Sequence[str], *, kind: EmbedKind) -> list[list[float]]:
-        return embed_over(self.active(), self._config, texts, kind, timeout_s=self._deadline_s)
+        return embed_over(
+            self.active(), self._config, texts, kind, timeout_s=self._deadline_s(kind)
+        )
 
 
 class LlamaAnnotate(DeviceHttp):
@@ -44,13 +46,20 @@ class LlamaAnnotate(DeviceHttp):
         )
         self._model = config.model
         self._think = config.think
+        self._max_tokens = config.max_output_tokens
         self._deadline_s = ctx.annotate_deadline_s
         self._settings = settings or LlamaSettings()
 
     def annotate(
         self, prompt_messages: Sequence[Message], json_schema: Mapping[str, JSON]
     ) -> Mapping[str, JSON]:
-        body = chat_body(self._model, prompt_messages, json_schema, seed=self._settings.seed)
+        body = chat_body(
+            self._model,
+            prompt_messages,
+            json_schema,
+            seed=self._settings.seed,
+            max_tokens=self._max_tokens,
+        )
         body["chat_template_kwargs"] = {"enable_thinking": self._think}
         reply = self.active().post(CHAT_PATH, body, timeout_s=self._deadline_s)
         return parse_chat(reply, json_schema)

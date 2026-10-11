@@ -14,7 +14,7 @@ from contextweave.models.decision import (
     QuestionKind,
 )
 from contextweave.models.device_http import device_table
-from contextweave.models.errors import ModelDeadlineError, ModelTransportError
+from contextweave.models.errors import ModelDeadlineError, ModelRequestError, ModelTransportError
 from contextweave.models.health import SlotHealth
 from contextweave.models.providers import Device, EmbedKind, ProviderRegistries, Slot
 from contextweave.models.residency import Probe, Profile, ServerBackend
@@ -160,17 +160,57 @@ def test_no_ready_device_skips_without_attempt(models: ModelsConfig, clock: Cloc
     assert len(rec.requests) == sent
 
 
-def test_slow_call_by_clock_counts_as_deadline_miss(models: ModelsConfig, clock: Clock) -> None:
-    slots, _ = make(models, clock, good)
-
-    def slow() -> str:
-        clock.advance(10)
+def taking(clock: Clock, seconds: float) -> Callable[[], str]:
+    def call() -> str:
+        clock.advance(seconds)
         return "late"
 
-    result = slots.call(Slot.EMBED, slow)
+    return call
+
+
+def test_call_past_hard_deadline_counts_as_deadline_miss(
+    models: ModelsConfig, clock: Clock
+) -> None:
+    slots, _ = make(models, clock, good)
+    result = slots.call(Slot.EMBED, taking(clock, models.deadline_ms / 1000 + 1))
     assert isinstance(result, Skipped)
     assert slots.healths[Slot.EMBED].status().down == (Device.GPU,)
     assert ModelDeadlineError.code_value in ModelDeadlineError("x").code
+
+
+def test_call_past_warn_is_kept_and_counted_slow(models: ModelsConfig, clock: Clock) -> None:
+    slots, _ = make(models, clock, good)
+    result = slots.call(Slot.EMBED, taking(clock, models.warn_ms / 1000 + 1))
+    assert result == Done("late")
+    status = slots.healths[Slot.EMBED].status()
+    assert status.down == ()
+    assert status.slow_rate == 1.0
+    assert status.slow_warn
+    assert status.skip_rate == 0.0
+
+
+def test_rejected_request_skips_without_marking_device_down(
+    models: ModelsConfig, clock: Clock
+) -> None:
+    slots, _ = make(models, clock, good)
+
+    def rejected() -> str:
+        raise ModelRequestError("/v1/embeddings returned 400")
+
+    assert isinstance(slots.call(Slot.EMBED, rejected), Skipped)
+    assert slots.healths[Slot.EMBED].status().down == ()
+    assert slots.healths[Slot.EMBED].active is Device.GPU
+
+
+def test_doc_embeds_use_the_batch_budget(models: ModelsConfig, clock: Clock) -> None:
+    slots, _ = make(models, clock, good)
+    query_cap = models.deadline_ms / 1000
+    assert slots.embed_budget(EmbedKind.DOC).hard_s == models.embed.batch_deadline_ms / 1000
+    assert slots.embed_budget(EmbedKind.QUERY).hard_s == query_cap
+    doc = slots.call(
+        Slot.EMBED, taking(clock, query_cap + 1), budget=slots.embed_budget(EmbedKind.DOC)
+    )
+    assert doc == Done("late")
 
 
 def test_skip_rate_and_warn_threshold(models: ModelsConfig, clock: Clock) -> None:
@@ -375,11 +415,7 @@ def test_unknown_embed_provider_disables_slot(models: ModelsConfig, clock: Clock
 
 def test_annotate_slot_uses_its_own_deadline(models: ModelsConfig, clock: Clock) -> None:
     slots, _ = make(models, clock, good)
-
-    def slow() -> str:
-        clock.advance(10)
-        return "late"
-
+    slow = taking(clock, models.deadline_ms / 1000 + 1)
     assert isinstance(slots.call(Slot.ANNOTATE, slow), Done)
     assert isinstance(slots.call(Slot.EMBED, slow), Skipped)
 

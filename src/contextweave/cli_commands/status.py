@@ -157,9 +157,11 @@ def _slot_lines(daemon: dict[str, JSON]) -> list[str]:
     for slot in models if isinstance(models, list) else []:
         if isinstance(slot, dict):
             flag = " WARN" if slot.get("warn") is True else ""
+            slow = " SLOW" if slot.get("slow_warn") is True else ""
             lines.append(
                 f"  model {slot.get('slot')}: device {slot.get('active')}, skip rate "
-                f"{slot.get('skip_rate')} over {slot.get('calls_in_window')} calls{flag}"
+                f"{slot.get('skip_rate')}, slow rate {slot.get('slow_rate')}"
+                f" over {slot.get('calls_in_window')} calls{flag}{slow}"
             )
     return lines
 

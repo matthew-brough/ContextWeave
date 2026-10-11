@@ -60,8 +60,8 @@ def run_probe(
     )
     env = ProbeEnv(
         models=models,
-        configured_deadline_ms=config.models.deadline_ms,
-        configured_annotate_deadline_ms=config.models.annotate.deadline_ms,
+        configured_warn_ms=config.models.warn_ms,
+        configured_annotate_warn_ms=config.models.annotate.warn_ms,
         gate=config.gate,
         options=options,
         slots=slots,
@@ -123,19 +123,17 @@ def _embed_recommendations(lines: list[Line], config: Config) -> list[str]:
 
 def _annotate_recommendations(lines: list[Line], config: Config) -> list[str]:
     rates = _find(lines, "annotate.rate")
-    deadline = config.models.annotate.deadline_ms
+    warn = config.models.annotate.warn_ms
     notes: list[str] = []
     for device, line in rates.items():
         p95 = line.metrics["p95_ms"]
-        if p95 > deadline:
+        if p95 > warn:
             notes.append(
-                f"T19 annotate on {device}: p95 {p95:.0f} ms exceeds annotate.deadline_ms "
-                f"{deadline}; raise it to at least {_round_up(p95 * 1.25)} ms"
+                f"T19 annotate on {device}: p95 {p95:.0f} ms exceeds annotate.warn_ms "
+                f"{warn}; raise it to at least {_round_up(p95 * 1.25)} ms"
             )
         else:
-            notes.append(
-                f"T19 annotate on {device}: p95 {p95:.0f} ms fits annotate.deadline_ms {deadline}"
-            )
+            notes.append(f"T19 annotate on {device}: p95 {p95:.0f} ms fits annotate.warn_ms {warn}")
     return notes
 
 

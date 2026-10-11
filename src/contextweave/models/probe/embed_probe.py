@@ -129,10 +129,10 @@ def _latency_lines(env: ProbeEnv, client: EmbedClient, device: Device) -> list[L
     gpu_used = gpu_used_mib(env.host)
     if gpu_used is not None:
         metrics["gpu_used_mib"] = gpu_used
-    over = latency.p95_ms > env.configured_deadline_ms
+    over = latency.p95_ms > env.configured_warn_ms
     summary = f"query p50 {latency.p50_ms:.0f} ms, p95 {latency.p95_ms:.0f} ms, cold {cold:.0f} ms"
     if over:
-        summary += f" (p95 over deadline_ms {env.configured_deadline_ms})"
+        summary += f" (p95 over warn_ms {env.configured_warn_ms})"
     lines = [Line("embed.query", name, Status.WARN if over else Status.OK, summary, metrics)]
     lines.append(_doc_batch_line(env, client, device))
     return lines

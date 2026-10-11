@@ -146,14 +146,12 @@ NO_DOC = FakeWire(WireInfo(None, ()))
 def config_with(
     embed_provider: str = "fake",
     annotate_provider: str = "fake",
-    deadline_ms: int = 1500,
+    warn_ms: int = 1500,
 ) -> Config:
     models = ModelsConfig(
-        deadline_ms=deadline_ms,
+        warn_ms=warn_ms,
         embed=EmbedConfig(provider=embed_provider, model="jina-fake", dim=EMBED_DIM),
-        annotate=AnnotateConfig(
-            provider=annotate_provider, model="qwen-fake", deadline_ms=deadline_ms
-        ),
+        annotate=AnnotateConfig(provider=annotate_provider, model="qwen-fake", warn_ms=warn_ms),
         classify=ClassifyConfig(provider="none"),
     )
     return replace(Config(), models=models, gate=GateConfig(window=30))
@@ -173,13 +171,13 @@ def probe_fakes(
     annotate_cost: Mapping[Device, float] | None = None,
     broken: frozenset[Device] = frozenset(),
     slots: tuple[Slot, ...] = (Slot.EMBED, Slot.ANNOTATE),
-    deadline_ms: int = 1500,
+    warn_ms: int = 1500,
 ):
     embed = DeviceEmbed(clock, embed_cost or {Device.GPU: 10.0, Device.CPU: 80.0}, broken)
     annotate = DeviceAnnotate(clock, annotate_cost or {Device.GPU: 400.0, Device.CPU: 3000.0})
     options = ProbeOptions(slots=slots, runs=4, warmup=1, annotate_chunks=3)
     return run_probe(
-        config_with(deadline_ms=deadline_ms),
+        config_with(warn_ms=warn_ms),
         options,
         registries=registries_with(embed, annotate),
         host=FakeHost(),

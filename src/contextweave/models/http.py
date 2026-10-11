@@ -3,7 +3,13 @@ from collections.abc import Mapping
 import httpx
 
 from contextweave.core.types import JSON
-from contextweave.models.errors import ModelDeadlineError, ModelResponseError, ModelTransportError
+from contextweave.models.errors import (
+    ModelContextError,
+    ModelDeadlineError,
+    ModelRequestError,
+    ModelResponseError,
+    ModelTransportError,
+)
 from contextweave.models.wire import as_object, to_json
 
 
@@ -50,10 +56,35 @@ class JsonClient:
         return True
 
     def _decode(self, path: str, response: httpx.Response) -> dict[str, JSON]:
-        if response.status_code >= 400:
+        if 400 <= response.status_code < 500:
+            raise _rejection(path, response)
+        if response.status_code >= 500:
             raise ModelTransportError(f"{path} returned {response.status_code}")
         try:
             decoded: object = response.json()
         except ValueError as exc:
             raise ModelResponseError(f"{path}: invalid JSON body") from exc
         return as_object(to_json(decoded), path)
+
+
+def _rejection(path: str, response: httpx.Response) -> ModelRequestError:
+    """A 4xx as a request error; llama-server context overflows carry the real token counts."""
+    message = f"{path} returned {response.status_code}"
+    try:
+        decoded: object = response.json()
+    except ValueError:
+        return ModelRequestError(message)
+    error = to_json(decoded)
+    detail = error.get("error") if isinstance(error, dict) else None
+    if not isinstance(detail, dict):
+        return ModelRequestError(message)
+    needed = detail.get("n_prompt_tokens")
+    available = detail.get("n_ctx")
+    if isinstance(needed, int) and isinstance(available, int) and needed > available > 0:
+        return ModelContextError(
+            f"{message}: {needed} tokens exceed context {available}",
+            needed=needed,
+            available=available,
+        )
+    text = detail.get("message")
+    return ModelRequestError(f"{message}: {text}" if isinstance(text, str) else message)

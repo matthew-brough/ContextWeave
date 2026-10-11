@@ -21,7 +21,8 @@ from contextweave.index.vectors import (
     vec_available,
     write_vectors,
 )
-from contextweave.models.providers import EmbedKind
+from contextweave.models.errors import ModelContextError
+from contextweave.models.providers import EmbedClient, EmbedKind, Slot
 from contextweave.models.slots import ModelSlots, Skipped
 
 STAGE = "embed"
@@ -58,6 +59,16 @@ def truncate_to_tokens(text: str, tokenizer: ChunkTokenizer, limit: int) -> str:
         else:
             high = middle - 1
     return text[:low]
+
+
+def embed_fitting(client: EmbedClient, texts: Sequence[str], kind: EmbedKind) -> list[list[float]]:
+    """Embed texts; on a context overflow retry one by one, re-cutting by the server's count."""
+    try:
+        return client.embed(texts, kind=kind)
+    except ModelContextError as exc:
+        if len(texts) == 1:
+            return client.embed([texts[0][: int(len(texts[0]) * exc.fit_ratio())]], kind=kind)
+    return [vector for text in texts for vector in embed_fitting(client, [text], kind)]
 
 
 def code_inputs(store: Store) -> tuple[VectorInput, ...]:
@@ -134,7 +145,12 @@ def _embed_batch(
 
     def compute(keys: Sequence[str]) -> Mapping[str, Sequence[float]]:
         inputs = [truncate_to_tokens(texts[key], tokenizer, budget) for key in keys]
-        outcome = slots.embed(inputs, kind=EmbedKind.DOC, stage=STAGE)
+        outcome = slots.call(
+            Slot.EMBED,
+            lambda: embed_fitting(slots.clients.embed, inputs, EmbedKind.DOC),
+            stage=STAGE,
+            budget=slots.embed_budget(EmbedKind.DOC),
+        )
         if isinstance(outcome, Skipped):
             tally.degraded.append(outcome.degraded)
             return {}

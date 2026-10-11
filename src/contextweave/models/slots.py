@@ -23,6 +23,7 @@ from contextweave.models.errors import (
     ModelDisabledError,
     ModelError,
     ModelParseError,
+    ModelRequestError,
     ProviderSlotError,
 )
 from contextweave.models.health import Clock, HealthStatus, SlotHealth, Submit
@@ -71,6 +72,17 @@ class Skipped:
 type Outcome[T] = Done[T] | Skipped
 
 
+@dataclass(frozen=True, slots=True)
+class CallBudget:
+    """Wall-clock limits of one model call: past warn_s it counts as slow, past hard_s it fails."""
+
+    hard_s: float
+    warn_s: float | None = None
+
+    def is_slow(self, elapsed_s: float) -> bool:
+        return self.warn_s is not None and elapsed_s > self.warn_s
+
+
 def default_registries() -> ProviderRegistries:
     """Registries with the built-in providers."""
     registries = ProviderRegistries()
@@ -109,10 +121,11 @@ class ModelSlots:
     clients: SlotClients
     healths: Mapping[Slot, SlotHealth]
     residency: Residency
-    deadlines_s: Mapping[Slot, float]
+    budgets: Mapping[Slot, CallBudget]
     clock: Clock
     issues: tuple[str, ...] = field(default=())
     temperatures: Mapping[str, float] = field(default_factory=dict[str, float])
+    batch_budget: CallBudget | None = None
 
     @classmethod
     def from_config(
@@ -167,6 +180,7 @@ class ModelSlots:
                 clock=clock,
                 retry_after_s=models.retry_after_s,
                 skip_warn=models.skip_warn,
+                slow_warn=models.slow_warn,
                 loaded=slot is not Slot.CLASSIFY or classify_off,
             )
             for slot in Slot
@@ -176,32 +190,45 @@ class ModelSlots:
             healths,
             Residency(models, healths, backends),
             {
-                Slot.EMBED: models.deadline_ms / 1000,
-                Slot.ANNOTATE: models.annotate.deadline_ms / 1000,
-                Slot.CLASSIFY: models.deadline_ms / 1000,
+                Slot.EMBED: CallBudget(ctx.deadline_s, models.warn_ms / 1000),
+                Slot.ANNOTATE: CallBudget(ctx.annotate_deadline_s, models.annotate.warn_ms / 1000),
+                Slot.CLASSIFY: CallBudget(ctx.deadline_s, models.warn_ms / 1000),
             },
             clock,
             tuple(issues),
             (calibration or Calibration()).temperatures(_calibration_key(models)),
+            CallBudget(ctx.embed_batch_deadline_s),
         )
 
-    def call[T](self, slot: Slot, fn: Callable[[], T], *, stage: str | None = None) -> Outcome[T]:
-        """Run one model call on the slot's active device; failures become a Skipped result."""
+    def call[T](
+        self,
+        slot: Slot,
+        fn: Callable[[], T],
+        *,
+        stage: str | None = None,
+        budget: CallBudget | None = None,
+    ) -> Outcome[T]:
+        """Run one model call on the slot's active device; failures become a Skipped result.
+
+        Past the budget's warn_s the result is kept and counted slow; only hard_s fails the call.
+        A rejected request or unparsable answer skips that call without marking the device down.
+        """
         name = stage or slot.value
         health = self.healths[slot]
         device = health.acquire()
         if device is None:
             health.record_unavailable()
             return Skipped(DegradedEntry(stage=name, reason=health.unavailable_reason()))
-        deadline_s = self.deadlines_s[slot]
+        limits = budget or self.budgets[slot]
         started = self.clock()
         try:
             value = fn()
-            if self.clock() - started > deadline_s:
-                raise ModelDeadlineError(f"call exceeded {deadline_s:.3f}s")
+            elapsed = self.clock() - started
+            if elapsed > limits.hard_s:
+                raise ModelDeadlineError(f"call exceeded {limits.hard_s:.3f}s")
         except ModelDisabledError as exc:
             return Skipped(DegradedEntry(stage=name, reason=str(exc)))
-        except ModelParseError as exc:
+        except (ModelParseError, ModelRequestError) as exc:
             health.record_success()
             return Skipped(DegradedEntry(stage=name, reason=str(exc), device_tried=str(device)))
         except ModelError as exc:
@@ -211,15 +238,24 @@ class ModelSlots:
             health.record_failure(device)
             reason = str(exc) or type(exc).__name__
             return Skipped(DegradedEntry(stage=name, reason=reason, device_tried=str(device)))
-        health.record_success()
+        health.record_success(slow=limits.is_slow(elapsed))
         return Done(value)
+
+    def embed_budget(self, kind: EmbedKind) -> CallBudget:
+        """Document batches are index-time and get the batch budget; the rest are query-time."""
+        if kind is EmbedKind.DOC and self.batch_budget is not None:
+            return self.batch_budget
+        return self.budgets[Slot.EMBED]
 
     def embed(
         self, texts: Sequence[str], *, kind: EmbedKind, stage: str | None = None
     ) -> Outcome[list[list[float]]]:
         """Embed texts through the embed slot."""
         return self.call(
-            Slot.EMBED, lambda: self.clients.embed.embed(texts, kind=kind), stage=stage
+            Slot.EMBED,
+            lambda: self.clients.embed.embed(texts, kind=kind),
+            stage=stage,
+            budget=self.embed_budget(kind),
         )
 
     def annotate(

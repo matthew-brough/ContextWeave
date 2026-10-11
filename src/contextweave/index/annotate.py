@@ -1,16 +1,20 @@
 import json
 import re
 import time
+from collections import deque
 from collections.abc import Callable, Mapping
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from contextweave.core.config import Config
 from contextweave.core.errors import DegradedEntry
 from contextweave.core.types import JSON
+from contextweave.index.chunk_tokens import ChunkTokenizer, default_tokenizer
 from contextweave.index.derived import DerivedAnnotation, DerivedCache
+from contextweave.index.embed import truncate_to_tokens
 from contextweave.index.store import Store
-from contextweave.models.errors import ModelParseError
+from contextweave.models.errors import ModelContextError, ModelParseError, ModelRequestError
 from contextweave.models.prompt_store import PROMPTS_DIR, PromptError, PromptTemplate, load_prompt
 from contextweave.models.providers import Slot
 from contextweave.models.slots import Done, ModelSlots, Outcome
@@ -18,7 +22,8 @@ from contextweave.models.slots import Done, ModelSlots, Outcome
 STAGE = "annotate"
 PROMPT_NAME = "annotate"
 ANNOTATED_PROFILES = ("symbols", "defs", "outline")
-MAX_CONSECUTIVE_MALFORMED = 8
+MAX_CONSECUTIVE_FAULTS = 8
+DEFAULT_MAX_CODE_TOKENS = 6144
 
 _ELIGIBLE = "f.profile IN (" + ", ".join(f"'{profile}'" for profile in ANNOTATED_PROFILES) + ")"
 _UNANNOTATED = (
@@ -68,7 +73,7 @@ class _Tally:
     annotated: int = 0
     cached: int = 0
     model_seconds: float = 0.0
-    consecutive_malformed: int = 0
+    consecutive_faults: int = 0
     degraded: list[DegradedEntry] = field(default_factory=list[DegradedEntry])
 
     @property
@@ -80,7 +85,14 @@ class _Tally:
 
 @dataclass(slots=True)
 class _Attempt:
-    malformed: bool = False
+    chunk_fault: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _InFlight:
+    chunk: PendingChunk
+    attempt: _Attempt
+    future: Future[Outcome[DerivedAnnotation]]
 
 
 def annotation_text(annotation: DerivedAnnotation) -> str:
@@ -198,16 +210,21 @@ def validate_annotation(
 
 
 def _generate(
-    slots: ModelSlots, prompt: PromptTemplate, chunk: PendingChunk, attempt: _Attempt
+    slots: ModelSlots, prompt: PromptTemplate, chunk: PendingChunk, code: str, attempt: _Attempt
 ) -> Outcome[DerivedAnnotation]:
-    messages = prompt.render(path=chunk.path, kind=chunk.kind, name=chunk.name, code=chunk.code)
+    def ask(text: str) -> DerivedAnnotation:
+        messages = prompt.render(path=chunk.path, kind=chunk.kind, name=chunk.name, code=text)
+        output = slots.clients.annotate.annotate(messages, prompt.schema)
+        return validate_annotation(output, prompt.schema)
 
     def call() -> DerivedAnnotation:
         try:
-            output = slots.clients.annotate.annotate(messages, prompt.schema)
-            return validate_annotation(output, prompt.schema)
-        except ModelParseError:
-            attempt.malformed = True
+            try:
+                return ask(code)
+            except ModelContextError as exc:
+                return ask(code[: int(len(code) * exc.fit_ratio())])
+        except ModelParseError, ModelRequestError:
+            attempt.chunk_fault = True
             raise
 
     return slots.call(Slot.ANNOTATE, call, stage=STAGE)
@@ -227,12 +244,17 @@ def annotate_project(
     on_progress: Callable[[AnnotateProgress], None] | None = None,
     clock: Callable[[], float] = time.monotonic,
     prompts_dir: Path = PROMPTS_DIR,
+    tokenizer: ChunkTokenizer | None = None,
+    max_code_tokens: int = DEFAULT_MAX_CODE_TOKENS,
 ) -> AnnotateReport:
     """Annotate chunks lacking an annotation for the current model and prompt version.
 
     Cache first, so unchanged content costs no model call; max_chunks bounds model calls per
-    slice. A model that is down stops the pass; a malformed answer leaves that chunk pending for
-    the next pass. Both are reported as degraded, never raised.
+    slice. Up to models.annotate.parallel calls run at once; results are written in chunk order
+    on this thread. Code past max_code_tokens is cut, and cut again to the server's own count
+    when it still overflows the context. A model that is down stops the pass; a malformed answer
+    or a rejected request leaves that chunk pending for the next pass. Both are reported as
+    degraded, never raised.
     """
     annotate = config.models.annotate
     total = total_chunks(store)
@@ -245,35 +267,61 @@ def annotate_project(
         entry = DegradedEntry(stage=STAGE, reason=f"annotate_prompt: {exc}")
         return AnnotateReport(pending=len(todo), total=total, degraded=(entry,))
     version = str(annotate.prompt_version)
+    counter = tokenizer or default_tokenizer()
     tally = _Tally()
     left = len(todo)
-    for chunk in todo:
-        found = cache.get_annotation(chunk.content_hash, annotate.model, version)
-        if found is not None:
-            tally.cached += 1
-        else:
-            if max_chunks is not None and tally.annotated >= max_chunks:
-                continue
-            attempt = _Attempt()
-            started = clock()
-            outcome = _generate(slots, prompt, chunk, attempt)
-            if not isinstance(outcome, Done):
-                tally.degraded.append(outcome.degraded)
-                if not attempt.malformed:
-                    break
-                tally.consecutive_malformed += 1
-                if tally.consecutive_malformed >= MAX_CONSECUTIVE_MALFORMED:
-                    break
-                continue
-            tally.consecutive_malformed = 0
-            tally.model_seconds += clock() - started
-            tally.annotated += 1
-            found = outcome.value
-            cache.put_annotation(chunk.content_hash, annotate.model, version, found)
+    submitted = 0
+    started: float | None = None
+    in_flight: deque[_InFlight] = deque()
+
+    def record(chunk: PendingChunk, found: DerivedAnnotation) -> None:
+        nonlocal left
         write_annotation(store, chunk, annotate.model, annotate.prompt_version, found)
         left -= 1
         if on_progress is not None:
             on_progress(AnnotateProgress(total - left, total, tally.rate, _eta(left, tally.rate)))
+
+    def settle(flight: _InFlight, *, counting: bool) -> bool:
+        outcome = flight.future.result()
+        if isinstance(outcome, Done):
+            tally.consecutive_faults = 0
+            tally.annotated += 1
+            if started is not None:
+                tally.model_seconds = clock() - started
+            cache.put_annotation(flight.chunk.content_hash, annotate.model, version, outcome.value)
+            record(flight.chunk, outcome.value)
+            return True
+        if not counting:
+            return True
+        tally.degraded.append(outcome.degraded)
+        if not flight.attempt.chunk_fault:
+            return False
+        tally.consecutive_faults += 1
+        return tally.consecutive_faults < MAX_CONSECUTIVE_FAULTS
+
+    with ThreadPoolExecutor(max(annotate.parallel, 1), thread_name_prefix=STAGE) as pool:
+        going = True
+        for chunk in todo:
+            found = cache.get_annotation(chunk.content_hash, annotate.model, version)
+            if found is not None:
+                tally.cached += 1
+                record(chunk, found)
+                continue
+            if max_chunks is not None and submitted >= max_chunks:
+                continue
+            if started is None:
+                started = clock()
+            code = truncate_to_tokens(chunk.code, counter, max_code_tokens)
+            attempt = _Attempt()
+            future = pool.submit(_generate, slots, prompt, chunk, code, attempt)
+            in_flight.append(_InFlight(chunk, attempt, future))
+            submitted += 1
+            if len(in_flight) >= annotate.parallel:
+                going = settle(in_flight.popleft(), counting=True)
+                if not going:
+                    break
+        while in_flight:
+            going = settle(in_flight.popleft(), counting=going) and going
     pending = len(pending_chunks(store, config))
     return AnnotateReport(
         tally.annotated,
