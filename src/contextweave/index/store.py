@@ -51,6 +51,7 @@ GENERATION_KEY = "generation"
 STRUCTURE_KEY = "structure"
 EDGES_KEY = "edges_structure"
 LOCK_POLL_S = 0.05
+SQLITE_BUSY_S = 30.0
 
 type SqlValue = str | int | float | bytes | None
 type Row = tuple[object, ...]
@@ -847,7 +848,7 @@ _FILE_SELECT = (
 
 
 def _connect(target: str, *, uri: bool = False) -> sqlite3.Connection:
-    connection = sqlite3.connect(target, uri=uri, isolation_level=None)
+    connection = sqlite3.connect(target, uri=uri, isolation_level=None, timeout=SQLITE_BUSY_S)
     load_vec(connection)
     connection.execute("PRAGMA foreign_keys = ON")
     return connection

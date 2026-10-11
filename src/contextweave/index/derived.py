@@ -8,6 +8,7 @@ from datetime import timedelta
 from pathlib import Path
 
 _BATCH = 400
+SQLITE_BUSY_S = 30.0
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS derived_annotations(
@@ -72,7 +73,7 @@ class DerivedCache:
     def __init__(self, path: Path, clock: Callable[[], float] = time.time) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._clock = clock
-        self._db = sqlite3.connect(path)
+        self._db = sqlite3.connect(path, timeout=SQLITE_BUSY_S)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.executescript(_SCHEMA)
         self._db.commit()

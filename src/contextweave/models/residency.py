@@ -19,7 +19,7 @@ type Sleep = Callable[[float], None]
 
 STOP_GRACE_S = 5.0
 POLL_INTERVAL_S = 0.5
-PROBE_TIMEOUT_S = 1.0
+PROBE_TIMEOUT_S = 5.0
 
 
 class Profile(StrEnum):
@@ -100,7 +100,7 @@ class ServerBackend:
         *,
         clock: Clock = time.monotonic,
         sleep: Sleep = time.sleep,
-        startup_timeout_s: float = 60.0,
+        startup_timeout_s: float = 300.0,
     ) -> None:
         self._slot = slot
         self._servers = servers

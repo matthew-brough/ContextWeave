@@ -10,7 +10,7 @@ from contextweave.core.types import JSON
 from contextweave.daemon.client import DaemonUnavailable, IpcClient, RemoteError
 from contextweave.daemon.pidlock import lock_is_held
 
-PING_TIMEOUT_S = 1.0
+PING_TIMEOUT_S = 5.0
 START_WAIT_S = 10.0
 STOP_WAIT_S = 5.0
 POLL_S = 0.05

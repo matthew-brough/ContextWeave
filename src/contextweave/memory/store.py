@@ -358,7 +358,7 @@ class MemoryStore:
         conn = sqlite3.connect(path)
         try:
             conn.execute("PRAGMA journal_mode = WAL")
-            conn.execute("PRAGMA busy_timeout = 5000")
+            conn.execute("PRAGMA busy_timeout = 30000")
             vec_enabled = _load_vec(conn)
             _ensure_schema(conn)
         except BaseException:

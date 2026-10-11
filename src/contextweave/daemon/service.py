@@ -34,7 +34,7 @@ type Params = Mapping[str, JSON]
 type Handler = Callable[[DaemonService, Params], JSON]
 
 METHODS: Registry[str, Handler] = Registry()
-WAIT_TIMEOUT_S = 60.0
+WAIT_TIMEOUT_S = 3600.0
 
 
 def method(name: str) -> Callable[[Handler], Handler]:
