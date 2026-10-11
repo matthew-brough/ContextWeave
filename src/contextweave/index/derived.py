@@ -153,11 +153,22 @@ class DerivedCache:
         self, content_hash: str, space: str, model_id: str, dim: int, vector: Sequence[float]
     ) -> None:
         """Insert or replace a float32 vector; its length must equal dim."""
-        if len(vector) != dim:
-            raise ValueError(f"vector length {len(vector)} != dim {dim}")
-        self._db.execute(
+        self.put_vectors({content_hash: vector}, space, model_id, dim)
+
+    def put_vectors(
+        self, vectors: Mapping[str, Sequence[float]], space: str, model_id: str, dim: int
+    ) -> None:
+        """Insert or replace many float32 vectors in one commit; each length must equal dim."""
+        for vector in vectors.values():
+            if len(vector) != dim:
+                raise ValueError(f"vector length {len(vector)} != dim {dim}")
+        now = self._clock()
+        self._db.executemany(
             "INSERT OR REPLACE INTO derived_vectors VALUES (?, ?, ?, ?, ?, ?)",
-            (content_hash, space, model_id, dim, array("f", vector).tobytes(), self._clock()),
+            (
+                (content_hash, space, model_id, dim, array("f", vector).tobytes(), now)
+                for content_hash, vector in vectors.items()
+            ),
         )
         self._db.commit()
 

@@ -1,16 +1,19 @@
 import hashlib
-from collections.abc import Mapping, Sequence
+from collections import deque
+from collections.abc import Iterable, Mapping, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from contextweave.core.config import Config, EmbedConfig
 from contextweave.core.errors import DegradedEntry
 from contextweave.index.chunk_tokens import ChunkTokenizer, default_tokenizer
-from contextweave.index.derived import DerivedCache, cached_or_compute
+from contextweave.index.derived import DerivedCache
 from contextweave.index.store import Store
 from contextweave.index.vectors import (
     ANNOT,
     CODE,
     KINDS,
+    Space,
     SpaceKind,
     VectorInput,
     ensure_space,
@@ -28,6 +31,7 @@ from contextweave.models.slots import ModelSlots, Skipped
 STAGE = "embed"
 DEFAULT_BATCH = 16
 DEFAULT_MAX_INPUT_TOKENS = 8192
+WRITE_ROWS = 256
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,46 +129,130 @@ class _Spec:
     dim: int
 
 
-def _embed_batch(
+@dataclass(frozen=True, slots=True)
+class _Computed:
+    vectors: dict[str, Sequence[float]] = field(default_factory=dict[str, Sequence[float]])
+    degraded: DegradedEntry | None = None
+
+
+def _compute(
+    slots: ModelSlots,
+    texts: Sequence[str],
+    keys: Sequence[str],
+    spec: _Spec,
+    tokenizer: ChunkTokenizer,
+    budget: int,
+) -> _Computed:
+    inputs = [truncate_to_tokens(text, tokenizer, budget) for text in texts]
+    outcome = slots.call(
+        Slot.EMBED,
+        lambda: embed_fitting(slots.clients.embed, inputs, EmbedKind.DOC),
+        stage=STAGE,
+        budget=slots.embed_budget(EmbedKind.DOC),
+    )
+    if isinstance(outcome, Skipped):
+        return _Computed(degraded=outcome.degraded)
+    vectors = outcome.value
+    if len(vectors) != len(keys) or any(len(vector) != spec.dim for vector in vectors):
+        return _Computed(degraded=DegradedEntry(stage=STAGE, reason="embed_bad_vectors"))
+    return _Computed(dict(zip(keys, vectors, strict=True)))
+
+
+@dataclass(frozen=True, slots=True)
+class _Flight:
+    batch: Sequence[VectorInput]
+    found: Mapping[str, Sequence[float]]
+    future: Future[_Computed] | None
+
+
+@dataclass(slots=True)
+class _Sink:
+    """Buffers vectors and writes them to the project store one transaction per WRITE_ROWS."""
+
+    store: Store
+    spec: _Spec
+    space: Space | None
+    rows: list[tuple[VectorInput, Sequence[float]]] = field(
+        default_factory=list[tuple[VectorInput, Sequence[float]]]
+    )
+
+    def add(self, rows: Iterable[tuple[VectorInput, Sequence[float]]]) -> None:
+        self.rows.extend(rows)
+        if len(self.rows) >= WRITE_ROWS:
+            self.flush()
+
+    def flush(self) -> None:
+        if not self.rows:
+            return
+        self.space = self.space or ensure_space(
+            self.store, self.spec.kind, self.spec.model_id, self.spec.dim
+        )
+        with self.store.writer_lock():
+            write_vectors(self.store, self.space, self.rows)
+        self.rows.clear()
+
+
+def _settle(flight: _Flight, sink: _Sink, cache: DerivedCache, tally: _Tally) -> None:
+    merged = dict(flight.found)
+    computed = flight.future.result() if flight.future is not None else _Computed()
+    if computed.degraded is not None:
+        tally.degraded.append(computed.degraded)
+    elif computed.vectors:
+        spec = sink.spec
+        cache.put_vectors(computed.vectors, spec.kind, spec.model_id, spec.dim)
+        tally.embedded += len(computed.vectors)
+        merged.update(computed.vectors)
+    sink.add((item, merged[item.key]) for item in flight.batch if item.key in merged)
+
+
+def _embed_work(
+    work: Sequence[VectorInput],
+    sink: _Sink,
     slots: ModelSlots,
     cache: DerivedCache,
-    spec: _Spec,
-    batch: Sequence[VectorInput],
-    config: EmbedConfig,
-    tokenizer: ChunkTokenizer,
-    max_input_tokens: int,
     tally: _Tally,
-) -> Mapping[str, Sequence[float]]:
-    texts = {item.key: item.text for item in batch}
-    budget = max(max_input_tokens - tokenizer.count(config.doc_prefix), 1)
+    pace: _Pace,
+) -> None:
+    """Embed work in batches, keeping up to pace.parallel batches in flight, settled in order."""
+    spec = sink.spec
+    with ThreadPoolExecutor(pace.parallel, thread_name_prefix=STAGE) as pool:
+        in_flight: deque[_Flight] = deque()
+        for start in range(0, len(work), pace.batch_size):
+            if tally.degraded:
+                break
+            batch = work[start : start + pace.batch_size]
+            keys = [item.key for item in batch]
+            found = cache.get_vectors(keys, spec.kind, spec.model_id, spec.dim)
+            tally.cached += len(found)
+            missing = [key for key in dict.fromkeys(keys) if key not in found]
+            texts = {item.key: item.text for item in batch}
+            future = (
+                pool.submit(
+                    _compute,
+                    slots,
+                    [texts[key] for key in missing],
+                    missing,
+                    spec,
+                    pace.tokenizer,
+                    pace.budget,
+                )
+                if missing
+                else None
+            )
+            in_flight.append(_Flight(batch, found, future))
+            if len(in_flight) >= pace.parallel:
+                _settle(in_flight.popleft(), sink, cache, tally)
+        while in_flight:
+            _settle(in_flight.popleft(), sink, cache, tally)
+    sink.flush()
 
-    def lookup(keys: Sequence[str]) -> Mapping[str, Sequence[float]]:
-        found = cache.get_vectors(keys, spec.kind, spec.model_id, spec.dim)
-        tally.cached += len(found)
-        return found
 
-    def compute(keys: Sequence[str]) -> Mapping[str, Sequence[float]]:
-        inputs = [truncate_to_tokens(texts[key], tokenizer, budget) for key in keys]
-        outcome = slots.call(
-            Slot.EMBED,
-            lambda: embed_fitting(slots.clients.embed, inputs, EmbedKind.DOC),
-            stage=STAGE,
-            budget=slots.embed_budget(EmbedKind.DOC),
-        )
-        if isinstance(outcome, Skipped):
-            tally.degraded.append(outcome.degraded)
-            return {}
-        vectors = outcome.value
-        if len(vectors) != len(keys) or any(len(vector) != spec.dim for vector in vectors):
-            tally.degraded.append(DegradedEntry(stage=STAGE, reason="embed_bad_vectors"))
-            return {}
-        return dict(zip(keys, vectors, strict=True))
-
-    def store_vector(key: str, vector: Sequence[float]) -> None:
-        cache.put_vector(key, spec.kind, spec.model_id, spec.dim, vector)
-        tally.embedded += 1
-
-    return cached_or_compute([item.key for item in batch], lookup, compute, store_vector)
+@dataclass(frozen=True, slots=True)
+class _Pace:
+    tokenizer: ChunkTokenizer
+    budget: int
+    batch_size: int
+    parallel: int
 
 
 def embed_project(
@@ -190,6 +278,12 @@ def embed_project(
     model_id = embed_model_id(embed_config)
     counter = tokenizer or default_tokenizer()
     tally = _Tally()
+    pace = _Pace(
+        counter,
+        max(max_input_tokens - counter.count(embed_config.doc_prefix), 1),
+        batch_size,
+        max(embed_config.parallel, 1),
+    )
     remaining = 0
     live: list[str] = []
     for kind in KINDS:
@@ -200,18 +294,9 @@ def embed_project(
         spec = _Spec(kind, model_id, embed_config.dim)
         todo = pending_inputs(store, space, inputs) if space else inputs
         work = todo if max_chunks is None else todo[: max(max_chunks - tally.embedded, 0)]
-        for start in range(0, len(work), batch_size):
-            batch = work[start : start + batch_size]
-            vectors = _embed_batch(
-                slots, cache, spec, batch, embed_config, counter, max_input_tokens, tally
-            )
-            ready = [(item, vectors[item.key]) for item in batch if item.key in vectors]
-            if ready:
-                space = space or ensure_space(store, kind, model_id, embed_config.dim)
-                with store.writer_lock():
-                    write_vectors(store, space, ready)
-            if tally.degraded:
-                break
+        sink = _Sink(store, spec, space)
+        _embed_work(work, sink, slots, cache, tally, pace)
+        space = sink.space
         left = len(pending_inputs(store, space, inputs)) if space else len(inputs)
         remaining += left
         if left == 0:

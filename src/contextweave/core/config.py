@@ -121,6 +121,7 @@ class EmbedConfig:
     memory_prefix: str = ""
     query_device: str = "cpu"
     batch_deadline_ms: int = 300000
+    parallel: int = 4
     devices: tuple[str, ...] = ("gpu", "cpu")
     gpu: DeviceEndpointConfig = field(default_factory=_local(8770))
     cpu: DeviceEndpointConfig = field(default_factory=_local(8771))

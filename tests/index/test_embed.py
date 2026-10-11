@@ -1,16 +1,19 @@
 import json
+import threading
+import time
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
-from fake_embed import FakeEmbed, config_for, embed_config, slots_for
+from fake_embed import FakeEmbed, config_for, embed_config, hashed_vector, slots_for
 
 from contextweave.core.config import Config
 from contextweave.core.types import JSON
 from contextweave.index.chunk_tokens import embed_tokenizer, model_slug, tokenizer_file
 from contextweave.index.derived import DerivedCache
 from contextweave.index.embed import (
+    code_inputs,
     embed_fitting,
     embed_model_id,
     embed_project,
@@ -21,6 +24,7 @@ from contextweave.index.store import Store
 from contextweave.index.vectors import CODE, find_space, spaces
 from contextweave.models.errors import ModelContextError
 from contextweave.models.providers import Device, EmbedKind
+from contextweave.models.slots import ModelSlots, default_registries
 
 TWO_FUNCTIONS = (
     "def parse_token(raw):\n    return raw.strip()\n\n\ndef render_page(items):\n    return items\n"
@@ -244,3 +248,56 @@ def test_embed_fitting_splits_batch_and_recuts_the_long_item() -> None:
     vectors = embed_fitting(client, ["short", "x" * 400, "tiny"], EmbedKind.DOC)
     assert vectors == [[5.0], [float(int(400 * 0.25 * 0.85))], [4.0]]
     assert [len(call) for call in client.calls] == [3, 1, 1, 1, 1]
+
+
+@dataclass(slots=True)
+class OverlapEmbed:
+    """Fake embed that sleeps per call and records the peak number of concurrent calls."""
+
+    inner: FakeEmbed
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    active: int = 0
+    peak: int = 0
+
+    @property
+    def devices(self) -> tuple[Device, ...]:
+        return self.inner.devices
+
+    def set_device(self, device: Device) -> None:
+        self.inner.set_device(device)
+
+    def embed(self, texts: Sequence[str], *, kind: EmbedKind) -> list[list[float]]:
+        with self.lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        time.sleep(0.02)
+        with self.lock:
+            self.active -= 1
+            return self.inner.embed(texts, kind=kind)
+
+
+def test_batches_overlap_and_land_on_their_chunks(tmp_path: Path, cache: DerivedCache) -> None:
+    down = FakeEmbed(embed_config(), down=True)
+    config = config_for(down.config)
+    root = project(tmp_path)
+    for n in range(12):
+        (root / f"m{n}.py").write_text(f"def f{n}(x):\n    return x + {n}\n", encoding="utf-8")
+    index_project(root, config, slots=slots_for(down, config), cache=cache)
+    fake = OverlapEmbed(FakeEmbed(embed_config()))
+    registries = default_registries()
+    registries.embed.register("fake", lambda ctx: fake)
+    slots = ModelSlots.from_config(
+        config.models, registries=registries, clock=lambda: 0.0, submit=lambda job: job()
+    )
+    with Store.open(root) as store:
+        report = embed_project(store, slots, cache, config, batch_size=1)
+        assert report.pending == 0 and report.degraded == ()
+        assert fake.peak > 1
+        (space,) = spaces(store)
+        inputs = {item.chunk_id: item for item in code_inputs(store)}
+        assert report.embedded == len(inputs)
+        for chunk_id, item in inputs.items():
+            stored = cache.get_vectors([item.key], CODE, embed_model_id(config.models.embed), 128)
+            expected = hashed_vector(item.text, 128)
+            assert stored[item.key] == pytest.approx(expected, abs=1e-6), chunk_id
+        assert store.query(f"SELECT count(*) FROM {space.name}")[0] == (len(inputs),)
