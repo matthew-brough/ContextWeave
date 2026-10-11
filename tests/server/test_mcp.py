@@ -114,7 +114,10 @@ def test_roots_resolve_project(
         async with Client(
             build_server(base, structured=True), list_roots_callback=roots, mode="legacy"
         ) as client:
-            payload = structured(await client.call_tool("get_symbol", {"name": "top_level"}))
+            result = await client.call_tool("get_symbol", {"name": "top_level"})
+            payload = structured(result)
+            block = result.content[0]
+            assert isinstance(block, types.TextContent) and block.text.startswith("project ")
             project_echo = payload["project"]
             assert isinstance(project_echo, dict) and project_echo["via"] == "roots"
             assert payload["found"] is True

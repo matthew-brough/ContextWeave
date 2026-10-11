@@ -1,3 +1,4 @@
+import re
 from collections.abc import Iterable, Mapping, Sequence
 
 from contextweave.retrieve.pack import ContextPack
@@ -10,18 +11,21 @@ from contextweave.server.payloads import (
     FileOutlinePayload,
     GetSymbolPayload,
     Hit,
+    ImportItem,
     OutlineNode,
     SearchSymbolsPayload,
     SymbolItem,
 )
 
-CWD_VIA = "cwd"
-OUTLINE_PROFILE = "outline"
+UNPROMPTED_VIA = "roots"
+CODE_PROFILE = "symbols"
+NAME_SEGMENT = re.compile(r"[.:]")
 
 
-def _head(payload: Common) -> list[str]:
+def head_lines(payload: Common) -> list[str]:
+    """Project line only when the client, not the agent, chose the project."""
     project = payload["project"]
-    if project is None or project["via"] == CWD_VIA:
+    if project is None or project["via"] != UNPROMPTED_VIA:
         return []
     return [f"project {project['key']} via {project['via']}"]
 
@@ -55,13 +59,34 @@ def _span(start: int, end: int) -> str:
     return f"L{start}" if end <= start else f"L{start}-{end}"
 
 
-def _symbol_lines(item: SymbolItem) -> list[str]:
-    lines = [
-        f"{item['kind']} {item['qualified_name']} {_span(item['start_line'], item['end_line'])}"
-    ]
-    signature = item.get("signature")
-    if signature and "source" not in item and item["profile"] != OUTLINE_PROFILE:
+def _signs(signature: str | None, name: str, nested: bool) -> bool:
+    if not signature:
+        return False
+    if name in signature:
+        return True
+    last = NAME_SEGMENT.split(name)[-1]
+    return nested and re.search(rf"\b{re.escape(last)}\b", signature) is not None
+
+
+def _named_line(
+    kind: str, name: str, span: str, signature: str | None, profile: str | None, nested: bool
+) -> list[str]:
+    """`L1-5 <signature>` when the signature names the symbol, else `kind name span` + `sig:`."""
+    code = profile == CODE_PROFILE
+    if code and signature and _signs(signature, name, nested):
+        return [f"{span} {signature}"]
+    lines = [f"{kind}{name} {span}"]
+    if code and signature:
         lines.append(f"  sig: {signature}")
+    return lines
+
+
+def _symbol_lines(item: SymbolItem) -> list[str]:
+    span = _span(item["start_line"], item["end_line"])
+    signature = None if "source" in item else item.get("signature")
+    lines = _named_line(
+        f"{item['kind']} ", item["qualified_name"], span, signature, item["profile"], False
+    )
     if docstring := item.get("docstring"):
         lines.append(f"  doc: {docstring}")
     if "source" in item:
@@ -76,7 +101,7 @@ def _candidate_lines(items: Sequence[Candidate]) -> list[str]:
 
 
 def render_get_symbol(payload: GetSymbolPayload) -> str:
-    lines = _head(payload)
+    lines = head_lines(payload)
     if payload["ambiguous"]:
         lines.append(f"ambiguous {len(payload.get('candidates', []))}")
     elif not payload["found"]:
@@ -96,21 +121,26 @@ def _outline_lines(nodes: Sequence[OutlineNode], depth: int, profile: str | None
     for node in nodes:
         span = _span(node["start_line"], node.get("end_line", node["start_line"]))
         kind = f"{node['kind']} " if "kind" in node else ""
-        shape = ""
         if "children_count" in node:
             shape = f" [{node['children_count']} {node.get('uniformity', '')}]".replace(" ]", "]")
-        lines.append(f"{pad}{kind}{node['qualified_name']} {span}{shape}")
-        signature = node.get("signature")
-        if signature and profile != OUTLINE_PROFILE:
-            lines.append(f"{pad}  sig: {signature}")
+            span = f"{span}{shape}"
+        named = _named_line(
+            kind, node["qualified_name"], span, node.get("signature"), profile, True
+        )
+        lines.extend(f"{pad}{line}" for line in named)
         if docstring := node.get("docstring"):
             lines.append(f"{pad}  doc: {docstring}")
         lines.extend(_outline_lines(node.get("children", []), depth + 1, profile))
     return lines
 
 
+def _import_entry(item: ImportItem) -> str:
+    names = f" {{{', '.join(item['names'])}}}" if item["names"] else ""
+    return f"{item['module']}{names} L{item['line']}"
+
+
 def render_file_outline(payload: FileOutlinePayload) -> str:
-    lines = _head(payload)
+    lines = head_lines(payload)
     profile = payload["profile"]
     if profile is not None:
         lines.append(f"{_file_header(payload['path'])} {payload['line_count']} lines")
@@ -120,9 +150,8 @@ def render_file_outline(payload: FileOutlinePayload) -> str:
         payload.get("outline", []),
     ):
         lines.extend(_outline_lines(nodes, 0, profile))
-    for item in payload.get("imports", []):
-        names = f" {{{', '.join(item['names'])}}}" if item["names"] else ""
-        lines.append(f"import {item['module']}{names} L{item['line']}")
+    if imports := [_import_entry(item) for item in payload.get("imports", [])]:
+        lines.append(f"imports: {', '.join(imports)}")
     lines.extend(_tail(payload))
     return "\n".join(lines)
 
@@ -132,17 +161,22 @@ def _hit_lines(items: Sequence[Hit]) -> list[str]:
     for path, group in _by_path(items).items():
         lines.append(_file_header(path))
         for hit in group:
-            lines.append(
-                f"{hit['kind']} {hit['qualified_name']} {_span(hit['start_line'], hit['end_line'])}"
+            span = _span(hit["start_line"], hit["end_line"])
+            lines.extend(
+                _named_line(
+                    f"{hit['kind']} ",
+                    hit["qualified_name"],
+                    span,
+                    hit.get("signature"),
+                    hit["profile"],
+                    False,
+                )
             )
-            signature = hit.get("signature")
-            if signature and hit["profile"] != OUTLINE_PROFILE:
-                lines.append(f"  sig: {signature}")
     return lines
 
 
 def render_search_symbols(payload: SearchSymbolsPayload) -> str:
-    lines = _head(payload)
+    lines = head_lines(payload)
     lines.append(f"{len(payload['hits'])} of {payload['total_matches']}")
     lines.extend(_hit_lines(payload["hits"]))
     lines.extend(_tail(payload))
@@ -150,20 +184,19 @@ def render_search_symbols(payload: SearchSymbolsPayload) -> str:
 
 
 def render_ast_query(payload: AstQueryPayload) -> str:
-    lines = _head(payload)
+    lines = head_lines(payload)
     if payload["profile"] is not None:
         lines.append(_file_header(payload["path"]))
     for match in payload["matches"]:
-        lines.append(
-            f"@{match['capture']} {match['node_type']} {_span(match['start_line'], match['end_line'])}"
-        )
-        lines.append(match["text"])
+        head = f"@{match['capture']} {_span(match['start_line'], match['end_line'])}"
+        text = match["text"]
+        lines.extend([f"{head} {text}"] if "\n" not in text else [head, text])
     lines.extend(_tail(payload))
     return "\n".join(lines)
 
 
 def render_expand(payload: ExpandPayload) -> str:
-    lines = _head(payload)
+    lines = head_lines(payload)
     status = payload.get("status")
     if status != "ok":
         lines.append(f"{status or 'error'} {payload['ref']}")

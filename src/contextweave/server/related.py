@@ -21,15 +21,11 @@ from contextweave.server.payloads import (
     RelatedEdge,
     RelatedPayload,
 )
+from contextweave.server.render import head_lines
 
 DEFAULT_DEPTH = 1
 CANDIDATE_LIMIT = 20
 EDGE_LIMIT = 200
-
-
-def _head(payload: Common) -> list[str]:
-    project = payload["project"]
-    return [] if project is None else [f"project {project['key']} via {project['via']}"]
 
 
 def _tail(payload: Common) -> list[str]:
@@ -58,13 +54,15 @@ def _edge_where(edge: RelatedEdge) -> str:
 
 def render_related(payload: RelatedPayload) -> str:
     """Agent-facing text: one line per edge, candidates when the target was ambiguous."""
-    lines = _head(payload)
+    lines = head_lines(payload)
     if not payload["found"] and not payload.get("candidates"):
         lines.append("not found")
     for item in payload.get("candidates", []):
         lines.append(
             f"? {item['kind']} {item['qualified_name']} {item['path']}:{item['start_line']}"
         )
+    if payload["found"] and not payload["edges"]:
+        lines.append(f"0 {payload['rel']}")
     for edge in payload["edges"]:
         resolution = "" if edge["resolution"] == "exact" else f" [{edge['resolution']}]"
         lines.append(
@@ -77,6 +75,7 @@ def render_related(payload: RelatedPayload) -> str:
 def _payload(
     call: Call[RelatedPayload],
     target: str,
+    rel: str,
     found: bool,
     ambiguous: bool,
     edges: Sequence[RelatedEdge],
@@ -90,6 +89,7 @@ def _payload(
         degraded=call.env.degraded,
         truncated=hint is not None,
         target=target,
+        rel=rel,
         found=found,
         ambiguous=ambiguous,
         edges=list(edges),
@@ -110,6 +110,7 @@ def empty_related(echo: ProjectEcho | None, env: Envelope) -> RelatedPayload:
         degraded=env.degraded,
         truncated=False,
         target="",
+        rel="",
         found=False,
         ambiguous=False,
         edges=[],
@@ -239,7 +240,7 @@ def related_body(call: Call[RelatedPayload], args: RelatedArgs) -> RelatedPayloa
     raw = args["target"]
     targets = _targets(call, raw)
     if not targets:
-        payload = _payload(call, raw, False, False, [], None, [], None)
+        payload = _payload(call, raw, args["rel"], False, False, [], None, [], None)
         if targets is not None:
             payload["hint"] = "no such symbol or file; try search_symbols"
         return payload
@@ -249,7 +250,9 @@ def related_body(call: Call[RelatedPayload], args: RelatedArgs) -> RelatedPayloa
         return fit_items(
             call,
             candidates,
-            lambda kept, omitted, hint: _payload(call, raw, False, True, [], kept, omitted, hint),
+            lambda kept, omitted, hint: _payload(
+                call, raw, args["rel"], False, True, [], kept, omitted, hint
+            ),
             lambda item: OmittedEntry(
                 ref=item["ref"],
                 qualified_name=item["qualified_name"],
@@ -274,7 +277,9 @@ def related_body(call: Call[RelatedPayload], args: RelatedArgs) -> RelatedPayloa
     return fit_items(
         call,
         edges,
-        lambda kept, omitted, hint: _payload(call, shown, True, False, kept, None, omitted, hint),
+        lambda kept, omitted, hint: _payload(
+            call, shown, args["rel"], True, False, kept, None, omitted, hint
+        ),
         _omit,
         "lower depth or pass max_tokens to see more",
     )

@@ -309,12 +309,12 @@ def test_path_outside_project(context: ToolContext) -> None:
 
 
 def test_budget_truncation_with_omitted_refs(context: ToolContext) -> None:
-    result = run(context, "search_symbols", query="e", max_tokens=250)
+    result = run(context, "search_symbols", query="e", max_tokens=150)
     assert result.structured["truncated"] is True
     assert "hint" in result.structured
     omitted = items(result, "omitted")
     assert omitted and all(str(entry["ref"]).startswith("cw://") for entry in omitted)
-    assert bytes35(result.text) <= 250
+    assert bytes35(result.text) <= 150
 
 
 def test_budget_omitted_overflow_pack(context: ToolContext, key: str) -> None:

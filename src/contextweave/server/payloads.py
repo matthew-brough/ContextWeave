@@ -253,6 +253,7 @@ class RelatedEdge(TypedDict):
 
 class RelatedPayload(Common):
     target: str
+    rel: str
     found: bool
     ambiguous: bool
     edges: list[RelatedEdge]
