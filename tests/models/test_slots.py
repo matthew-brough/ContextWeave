@@ -262,7 +262,7 @@ def test_residency_serve_moves_to_cpu_servers_without_model_calls(
         return True
 
     slots, rec = make(models, clock, good, probe=probe)
-    slots.apply_profile(Profile.BULK)
+    slots.apply_profile(Profile.BULK_EMBED)
     slots.apply_profile(Profile.SERVE)
     assert rec.requests == []
     assert "http://127.0.0.1:8771" in probed
@@ -271,7 +271,7 @@ def test_residency_serve_moves_to_cpu_servers_without_model_calls(
     assert slots.healths[Slot.EMBED].active is Device.CPU
     assert slots.healths[Slot.CLASSIFY].active is Device.GPU
     assert slots.healths[Slot.ANNOTATE].active is Device.CPU
-    slots.apply_profile(Profile.BULK)
+    slots.apply_profile(Profile.BULK_EMBED)
     assert slots.healths[Slot.EMBED].active is Device.GPU
 
 
@@ -324,7 +324,7 @@ def test_classify_profiles_supervise_launch(models: ModelsConfig, clock: Clock) 
     question = Question("q", "t", QuestionKind.NOUL, ("yes", "no"))
     result = slots.ask(["s"], [question], stage="gate")
     assert isinstance(result, Done)
-    slots.apply_profile(Profile.BULK)
+    slots.apply_profile(Profile.BULK_ANNOTATE)
     assert launcher.started[0].running is False
     stopped = slots.ask(["s"], [question], stage="gate")
     assert isinstance(stopped, Skipped)
@@ -346,6 +346,30 @@ def test_warm_stops_other_device_process(models: ModelsConfig, clock: Clock) -> 
     health.activate(Device.CPU)
     assert gpu_started and gpu_started[0].running is False
     assert [h.command for h in launcher.started if h.running] == ["embed-cpu"]
+
+
+def test_bulk_profiles_hold_one_gpu_model_at_a_time(models: ModelsConfig, clock: Clock) -> None:
+    gpu_models = dataclasses.replace(
+        models,
+        embed=dataclasses.replace(
+            models.embed, gpu=DeviceEndpointConfig("http://127.0.0.1:8770", "embed-gpu")
+        ),
+        annotate=dataclasses.replace(
+            models.annotate, gpu=DeviceEndpointConfig("http://127.0.0.1:8772", "annotate-gpu")
+        ),
+    )
+    launcher = FakeLauncher()
+    slots = supervised(gpu_models, clock, launcher)
+
+    def running() -> list[str]:
+        return [h.command for h in launcher.started if h.running]
+
+    slots.apply_profile(Profile.BULK_ANNOTATE)
+    assert running() == ["annotate-gpu"]
+    slots.apply_profile(Profile.BULK_EMBED)
+    assert running() == ["embed-gpu"]
+    slots.release()
+    assert running() == []
 
 
 def test_unsupervised_classify_stub_is_never_probed(models: ModelsConfig, clock: Clock) -> None:

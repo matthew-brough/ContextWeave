@@ -130,15 +130,15 @@ class IndexRunner:
         """Build the shadow db, swap it in under the project guard, queue a reconcile."""
         models = self.models
 
-        def build() -> RebuildReport:
-            return build_shadow(
-                root,
-                self.config,
-                tokenizer=models.tokenizer if models is not None else None,
-                finish=models.derive_changed if models is not None else None,
-            )
-
-        report = models.bulk(build) if models is not None and bulk else build()
+        finish = None
+        if models is not None:
+            finish = models.bulk_derive if bulk else models.derive_changed
+        report = build_shadow(
+            root,
+            self.config,
+            tokenizer=models.tokenizer if models is not None else None,
+            finish=finish,
+        )
         with self.guard(key).exclusive():
             swap_shadow(root)
         self.stats(key).rebuilds += 1

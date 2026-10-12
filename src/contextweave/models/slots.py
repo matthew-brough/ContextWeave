@@ -181,7 +181,8 @@ class ModelSlots:
                 retry_after_s=models.retry_after_s,
                 skip_warn=models.skip_warn,
                 slow_warn=models.slow_warn,
-                loaded=slot is not Slot.CLASSIFY or classify_off,
+                loaded=(slot is not Slot.CLASSIFY or classify_off)
+                and not _launched(backends.get(slot), chains[slot]),
             )
             for slot in Slot
         }
@@ -287,6 +288,10 @@ class ModelSlots:
         """Switch residency profile."""
         self.residency.apply(profile)
 
+    def release(self) -> None:
+        """Stop every model server this process launched."""
+        self.residency.release()
+
     def status(self) -> tuple[HealthStatus, ...]:
         """Per-slot health snapshots."""
         return tuple(health.status() for health in self.healths.values())
@@ -305,6 +310,10 @@ def _backends(
         for slot, provider in providers.items()
         if isinstance(provider, Supervised)
     }
+
+
+def _launched(backend: ServerBackend | None, chain: Sequence[Device]) -> bool:
+    return backend is not None and bool(chain) and backend.launches(chain[0])
 
 
 def _warm(backend: ServerBackend | None, provider: object) -> Callable[[Device], None]:

@@ -16,7 +16,7 @@ from contextweave.cli_commands.indexing import full_index, progress_printer
 from contextweave.core.config import Config, load_config
 from contextweave.daemon.client import DaemonUnavailable, RemoteError
 from contextweave.daemon.lifecycle import client_for, is_running
-from contextweave.daemon.models import ModelRuntime
+from contextweave.daemon.models import DeriveReport, ModelRuntime
 from contextweave.daemon.rebuild import build_shadow, swap_shadow
 from contextweave.index.annotate import AnnotateReport, annotate_lines, annotate_project
 from contextweave.index.embed import EmbedReport, embed_project
@@ -74,13 +74,21 @@ def _rebuild_via_daemon(env: Mapping[str, str], key: str) -> bool:
     return True
 
 
-def _rebuild_local(root: Path, config: Config, env: Mapping[str, str], stage: str | None) -> None:
+def _derive_lines(report: DeriveReport) -> list[str]:
+    return [*annotate_lines(report.annotate), *_embed_lines(report.embed)]
+
+
+def _rebuild_local(
+    root: Path, config: Config, env: Mapping[str, str], stage: str | None
+) -> DeriveReport | None:
+    """Build the shadow with each model alone on the GPU in turn, then swap; the derive report."""
     models = open_models(config, env) if stage != "structure" else None
+    derived: list[DeriveReport] = []
     try:
 
         def finish(store: Store) -> None:
             if models is not None:
-                models.derive_changed(store)
+                derived.append(models.bulk_derive(store, serve_after=False))
 
         build_shadow(
             root,
@@ -92,6 +100,7 @@ def _rebuild_local(root: Path, config: Config, env: Mapping[str, str], stage: st
     finally:
         if models is not None:
             models.close()
+    return derived[0] if derived else None
 
 
 def run(args: argparse.Namespace, ctx: CommandContext) -> int:
@@ -105,8 +114,10 @@ def run(args: argparse.Namespace, ctx: CommandContext) -> int:
         if is_running(ctx.env) and _rebuild_via_daemon(ctx.env, project.key):
             say("rebuilt via daemon")
             return EXIT_OK
-        _rebuild_local(project.root, config, ctx.env, stage)
+        derived = _rebuild_local(project.root, config, ctx.env, stage)
         say("rebuilt")
+        for line in _derive_lines(derived) if derived is not None else []:
+            say(line)
         return EXIT_OK
     if stage == "structure":
         for line in _report_lines(index_project(project.root, config, env=ctx.env)):

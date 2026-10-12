@@ -24,7 +24,8 @@ PROBE_TIMEOUT_S = 5.0
 
 
 class Profile(StrEnum):
-    BULK = "bulk"
+    BULK_ANNOTATE = "bulk_annotate"
+    BULK_EMBED = "bulk_embed"
     SERVE = "serve"
 
 
@@ -116,6 +117,11 @@ class ServerBackend:
         self._startup_timeout_s = startup_timeout_s
         self._handles: dict[Device, ProcessHandle] = {}
 
+    def launches(self, device: Device) -> bool:
+        """Whether this backend starts the device's server itself."""
+        server = self._servers.get(device)
+        return server is not None and bool(server.launch)
+
     def warm(self, device: Device) -> None:
         """Start the device's server when launch is set, wait for it, then stop the others."""
         server = self._servers.get(device)
@@ -160,8 +166,12 @@ class Residency:
         self._backends = backends
         self._plans: Registry[Profile, ResidencyPlan] = Registry()
         self._plans.register(
-            Profile.BULK,
-            ResidencyPlan({Slot.EMBED: Device.GPU, Slot.ANNOTATE: Device.GPU, Slot.CLASSIFY: None}),
+            Profile.BULK_ANNOTATE,
+            ResidencyPlan({Slot.ANNOTATE: Device.GPU, Slot.EMBED: None, Slot.CLASSIFY: None}),
+        )
+        self._plans.register(
+            Profile.BULK_EMBED,
+            ResidencyPlan({Slot.ANNOTATE: None, Slot.EMBED: Device.GPU, Slot.CLASSIFY: None}),
         )
         self._plans.register(
             Profile.SERVE,
@@ -189,6 +199,12 @@ class Residency:
             health.resume()
             health.activate(_resolve(health, wanted))
         self.current = profile
+
+    def release(self) -> None:
+        """Stop every server this process launched."""
+        for backend in self._backends.values():
+            backend.stop_all()
+        self.current = None
 
 
 def _device(name: str) -> Device:
