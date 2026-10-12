@@ -48,7 +48,7 @@ def index_project(
         store.writer_lock(),
     ):
         known = {record.path: record for record in store.files()}
-        walked = walk_project(root, config.index.ignore)
+        walked = walk_project(root, config.index.ignore, config.index.include)
         added: list[str] = []
         updated: list[str] = []
         unchanged = 0

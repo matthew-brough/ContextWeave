@@ -38,12 +38,49 @@ def is_binary(path: Path) -> bool:
         return True
 
 
-def walk_project(root: Path, ignore: Sequence[str] = ()) -> tuple[WalkedFile, ...]:
-    """Every indexable file under root, sorted by posix path; never shells to git."""
+def walk_project(
+    root: Path, ignore: Sequence[str] = (), include: Sequence[str] = ()
+) -> tuple[WalkedFile, ...]:
+    """Every indexable file under root, or under the root-relative include dirs, sorted by posix
+    path; never shells to git. Paths stay root-relative and ancestor .gitignore files still apply.
+    """
     config_spec = GitIgnoreSpec.from_lines(ignore)
     found: list[WalkedFile] = []
-    _walk_dir(root, root, "", (), config_spec, found)
+    for start in _starts(include):
+        _walk_from(root, start, config_spec, found)
     return tuple(sorted(found, key=lambda item: item.path))
+
+
+def _starts(include: Sequence[str]) -> tuple[tuple[str, ...], ...]:
+    parts = {
+        tuple(part for part in entry.split("/") if part not in {"", "."})
+        for entry in include
+        if ".." not in entry.split("/")
+    }
+    if not include or () in parts:
+        return ((),)
+    return tuple(
+        sorted(
+            start
+            for start in parts
+            if not any(start[: len(other)] == other for other in parts if other != start)
+        )
+    )
+
+
+def _walk_from(
+    root: Path, start: tuple[str, ...], config_spec: GitIgnoreSpec, found: list[WalkedFile]
+) -> None:
+    directory = root
+    relative = ""
+    scopes: tuple[_Scope, ...] = ()
+    for part in start:
+        scopes = _with_local_gitignore(directory, relative, scopes)
+        directory = directory / part
+        relative = f"{relative}{part}/"
+    if directory.is_symlink() or not directory.is_dir():
+        return
+    _walk_dir(root, directory, relative, scopes, config_spec, found)
 
 
 def _walk_dir(

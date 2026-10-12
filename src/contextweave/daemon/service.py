@@ -115,7 +115,9 @@ class DaemonService:
         def make_watcher(
             root: Path, key: str, on_events: Callable[[Sequence[FileEvent]], None]
         ) -> PollWatcher:
-            return PollWatcher(root, config.index.ignore, poll_interval_s, on_events)
+            return PollWatcher(
+                root, config.index.ignore, poll_interval_s, on_events, config.index.include
+            )
 
         projects = ProjectManager(
             scheduler, make_watcher, idle_s=config.daemon.project_idle_minutes * 60.0

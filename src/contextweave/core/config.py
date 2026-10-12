@@ -23,6 +23,7 @@ type Scalar = bool | int | float | str | tuple[str, ...]
 @dataclass(frozen=True, slots=True)
 class IndexConfig:
     ignore: tuple[str, ...] = ()
+    include: tuple[str, ...] = ()
     test_globs: tuple[str, ...] = (
         "**/test_*.py",
         "**/*_test.go",

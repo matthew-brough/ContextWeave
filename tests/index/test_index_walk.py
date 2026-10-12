@@ -106,3 +106,42 @@ def test_dir_symlink_not_followed_and_outside_file_skipped(tmp_path: Path) -> No
     (root / "linkfile.py").symlink_to(outside / "secret.py")
     (root / "samefile.py").symlink_to(root / "in.py")
     assert paths(root) == ["in.py", "real/inner.py", "samefile.py"]
+
+
+def test_include_walks_only_listed_dirs_with_root_relative_paths(tmp_path: Path) -> None:
+    write(tmp_path, "server.py")
+    write(tmp_path, "cache/blob.py")
+    write(tmp_path, "data/other.py")
+    write(tmp_path, "data/resources/core/main.lua", "x = 1\n")
+    write(tmp_path, "data/resources/tool.py")
+    walked = walk_project(tmp_path, include=("data/resources/",))
+    assert [item.path for item in walked] == [
+        "data/resources/core/main.lua",
+        "data/resources/tool.py",
+    ]
+
+
+def test_include_keeps_ancestor_and_nested_gitignores(tmp_path: Path) -> None:
+    write(tmp_path, ".gitignore", "*.log\n")
+    write(tmp_path, "data/.gitignore", "/resources/dist/\n")
+    write(tmp_path, "data/resources/.gitignore", "secret.py\n")
+    write(tmp_path, "data/resources/a.py")
+    write(tmp_path, "data/resources/a.log")
+    write(tmp_path, "data/resources/secret.py")
+    write(tmp_path, "data/resources/dist/bundle.py")
+    walked = walk_project(tmp_path, include=("data/resources",))
+    assert [item.path for item in walked] == ["data/resources/.gitignore", "data/resources/a.py"]
+
+
+def test_include_merges_nested_entries_and_drops_escapes(tmp_path: Path) -> None:
+    write(tmp_path, "a/b/c.py")
+    write(tmp_path, "a/d.py")
+    write(tmp_path, "e.py")
+    walked = walk_project(tmp_path, include=("a/b", "./a", "../outside", "missing"))
+    assert [item.path for item in walked] == ["a/b/c.py", "a/d.py"]
+
+
+def test_include_of_root_walks_everything(tmp_path: Path) -> None:
+    write(tmp_path, "a/b.py")
+    write(tmp_path, "c.py")
+    assert [item.path for item in walk_project(tmp_path, include=(".", "a"))] == ["a/b.py", "c.py"]

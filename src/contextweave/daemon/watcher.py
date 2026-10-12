@@ -30,9 +30,11 @@ class PollWatcher:
         ignore: Sequence[str],
         interval_s: float,
         on_events: Callable[[Sequence[FileEvent]], None],
+        include: Sequence[str] = (),
     ) -> None:
         self._root = root
         self._ignore = tuple(ignore)
+        self._include = tuple(include)
         self._interval_s = interval_s
         self._on_events = on_events
         self._known: dict[str, Stamp] = {}
@@ -41,7 +43,8 @@ class PollWatcher:
 
     def _snapshot(self) -> dict[str, Stamp]:
         return {
-            item.path: (item.mtime_ns, item.size) for item in walk_project(self._root, self._ignore)
+            item.path: (item.mtime_ns, item.size)
+            for item in walk_project(self._root, self._ignore, self._include)
         }
 
     def prime(self) -> None:

@@ -18,11 +18,11 @@ class ReconcilePlan:
         return (*self.changed, *self.removed)
 
 
-def plan_reconcile(root: Path, ignore: Sequence[str]) -> ReconcilePlan:
+def plan_reconcile(root: Path, ignore: Sequence[str], include: Sequence[str] = ()) -> ReconcilePlan:
     """Stat walk against the files table; reads the db without writing."""
     with Store.open(root, readonly=True) as store:
         known = {record.path: record.stamp for record in store.files()}
-    walked = walk_project(root, ignore)
+    walked = walk_project(root, ignore, include)
     changed = tuple(
         item.path
         for item in walked

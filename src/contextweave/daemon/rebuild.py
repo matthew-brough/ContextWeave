@@ -48,7 +48,7 @@ def build_shadow(
     try:
         with Store.open(staging, chunk_config=config.chunk, tokenizer=tokenizer) as store:
             store.root = root
-            walked = walk_project(root, config.index.ignore)
+            walked = walk_project(root, config.index.ignore, config.index.include)
             for item in walked:
                 store.refresh(item.path)
             if finish is not None:

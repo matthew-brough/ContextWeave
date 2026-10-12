@@ -91,7 +91,7 @@ class IndexRunner:
             self.note_error(key, exc)
 
     def reconcile_plan(self, root: Path) -> ReconcilePlan:
-        return plan_reconcile(root, self.config.index.ignore)
+        return plan_reconcile(root, self.config.index.ignore, self.config.index.include)
 
     def _reconcile(self, key: str, root: Path) -> None:
         try:
