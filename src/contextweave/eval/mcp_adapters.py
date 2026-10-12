@@ -10,6 +10,7 @@ from pathlib import Path
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from contextweave.cli_commands.indexing import full_index
 from contextweave.core.budget import bytes35, serialize_structured
 from contextweave.core.config import load_config
 from contextweave.core.paths import user_state_dir
@@ -176,8 +177,13 @@ def _state_home(root: Path) -> Path:
     return root.parent / f"{root.name}.state"
 
 
-def prepare_checkout(root: Path, env: Mapping[str, str]) -> Mapping[str, str]:
-    """Index the checkout and register it in a state dir private to the eval; returns the env to serve with."""
+def prepare_checkout(
+    root: Path, env: Mapping[str, str], profile: str = "nomodel"
+) -> Mapping[str, str]:
+    """Index the checkout and register it in a state dir private to the eval; returns the env to serve with.
+
+    The full profile also annotates and embeds, so semantic retrieval has vectors to search.
+    """
     isolated = {**os.environ, **env, STATE_HOME_ENV: str(_state_home(root))}
     config = load_config(root, strict=False, env=isolated).config
     try:
@@ -185,6 +191,8 @@ def prepare_checkout(root: Path, env: Mapping[str, str]) -> Mapping[str, str]:
     except SchemaMismatchError:
         build_shadow(root, config)
         swap_shadow(root)
+    if profile == FULL_PROFILE:
+        full_index(root, config, isolated)
     ProjectRegistry(user_state_dir(isolated)).register(root)
     return {**env, STATE_HOME_ENV: isolated[STATE_HOME_ENV]}
 
@@ -192,7 +200,11 @@ def prepare_checkout(root: Path, env: Mapping[str, str]) -> Mapping[str, str]:
 async def _drive(
     target: ToolTarget, context: AdapterContext, queries: Sequence[str]
 ) -> tuple[Served, ...]:
-    base = prepare_checkout(context.root, context.env) if target.indexed else context.env
+    base = (
+        prepare_checkout(context.root, context.env, context.profile)
+        if target.indexed
+        else context.env
+    )
     env = {
         **base,
         PROFILE_ENV: context.profile,
