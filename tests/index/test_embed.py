@@ -188,7 +188,7 @@ def test_split_spans_covers_text_in_capped_spans() -> None:
     spans = split_spans(text, WordCount(), 3)
     assert "".join(text[start:end] for start, end in spans) == text
     assert all(WordCount().count(text[start:end]) <= 3 for start, end in spans)
-    assert len(split_spans(text, WordCount(), 1, max_parts=2)) == 2
+    assert len(split_spans(text, WordCount(), 1)) == 7
     assert split_spans("", WordCount(), 3) == [(0, 0)]
 
 

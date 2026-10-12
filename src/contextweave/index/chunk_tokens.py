@@ -1,3 +1,4 @@
+import bisect
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -46,6 +47,24 @@ class FileTokenizer:
 
     def count(self, text: str) -> int:
         return len(self.tokenizer.encode(text, add_special_tokens=False).ids)
+
+    def spans(self, text: str, limit: int) -> list[tuple[int, int]]:
+        """Consecutive spans of at most limit tokens from one encode, cut at a line end in the window's back half."""
+        ends = [end for _, end in self.tokenizer.encode(text, add_special_tokens=False).offsets]
+        spans: list[tuple[int, int]] = []
+        start = 0
+        while start < len(text):
+            first = bisect.bisect_right(ends, start)
+            if len(ends) - first <= limit:
+                spans.append((start, len(text)))
+                break
+            end = ends[first + limit - 1]
+            line = text.rfind("\n", start, end)
+            if line >= start + (end - start) // 2:
+                end = line + 1
+            spans.append((start, end))
+            start = end
+        return spans or [(0, len(text))]
 
 
 def model_slug(model: str) -> str:

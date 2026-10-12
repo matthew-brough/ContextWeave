@@ -7,14 +7,13 @@ from dataclasses import dataclass, field, replace
 
 from contextweave.core.config import Config, EmbedConfig
 from contextweave.core.errors import DegradedEntry
-from contextweave.index.chunk_tokens import ChunkTokenizer, default_tokenizer
+from contextweave.index.chunk_tokens import ChunkTokenizer, FileTokenizer, default_tokenizer
 from contextweave.index.derived import WHOLE, DerivedCache
 from contextweave.index.store import Store
 from contextweave.index.vectors import (
     ANNOT,
     CODE,
     KINDS,
-    MAX_PARTS,
     Space,
     SpaceKind,
     VectorInput,
@@ -69,13 +68,13 @@ def truncate_to_tokens(text: str, tokenizer: ChunkTokenizer, limit: int) -> str:
     return text[:low]
 
 
-def split_spans(
-    text: str, tokenizer: ChunkTokenizer, limit: int, max_parts: int = MAX_PARTS
-) -> list[tuple[int, int]]:
-    """Consecutive (start, end) spans of text of at most limit tokens each; text past max_parts drops."""
+def split_spans(text: str, tokenizer: ChunkTokenizer, limit: int) -> list[tuple[int, int]]:
+    """Consecutive (start, end) spans covering text, each at most limit tokens."""
+    if isinstance(tokenizer, FileTokenizer):
+        return tokenizer.spans(text, limit)
     spans: list[tuple[int, int]] = []
     start = 0
-    while start < len(text) and len(spans) < max_parts:
+    while start < len(text):
         window = truncate_to_tokens(text[start:], tokenizer, limit) or text[start : start + 1]
         spans.append((start, start + len(window)))
         start += len(window)
@@ -215,9 +214,7 @@ def _compute(
     cursor = iter(embedded)
     computed: dict[str, Parts] = {}
     for key, group in zip(keys, spans, strict=True):
-        computed[key] = tuple(part for start, _ in group for part in _shifted(next(cursor), start))[
-            :MAX_PARTS
-        ]
+        computed[key] = tuple(part for start, _ in group for part in _shifted(next(cursor), start))
     return _Computed(computed)
 
 

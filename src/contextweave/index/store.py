@@ -44,7 +44,7 @@ from contextweave.lang.model import Import, LangError
 from contextweave.lang.parse import ParseResult, parse_bytes
 from contextweave.lang.registry import GROUPS, PROFILES, Group, spec_for_path
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 DB_NAME = "index.db"
 LOCK_NAME = "index.lock"
 GENERATION_KEY = "generation"

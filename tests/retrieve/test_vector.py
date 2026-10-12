@@ -14,7 +14,7 @@ from contextweave.index.vectors import (
     VectorInput,
     VectorPart,
     ensure_space,
-    vector_id,
+    purge_orphans,
     write_vectors,
 )
 from contextweave.models.slots import ModelSlots
@@ -156,6 +156,11 @@ def chunk_ids(store: Store) -> dict[str, int]:
     return {str(path): int(str(chunk_id)) for path, chunk_id in rows}
 
 
+def part_index(store: Store, vector: int) -> int:
+    ((part,),) = store.query("SELECT part FROM vector_parts WHERE id = ?", (vector,))
+    return int(str(part))
+
+
 def test_knn_ranks_chunk_by_closest_part_and_reports_it(store: Store) -> None:
     ingest(store, "auth.py", AUTH)
     ingest(store, "chart.py", CHART)
@@ -174,7 +179,7 @@ def test_knn_ranks_chunk_by_closest_part_and_reports_it(store: Store) -> None:
         ],
     )
     hits = knn(store, space, [1.0, 0.0], scope=None, limit=2)
-    assert [(chunk_id, part) for chunk_id, _, part in hits] == [
+    assert [(chunk_id, part_index(store, vector)) for chunk_id, _, vector in hits] == [
         (ids["auth.py"], 1),
         (ids["chart.py"], 0),
     ]
@@ -186,12 +191,12 @@ def test_knn_refetches_until_enough_distinct_chunks(store: Store) -> None:
     ingest(store, "chart.py", CHART)
     ids = chunk_ids(store)
     space = ensure_space(store, CODE, "m", 2)
-    many = tuple(VectorPart(index, index + 1, [1.0, 0.001 * index]) for index in range(16))
+    many = tuple(VectorPart(index, index + 1, [1.0, 0.001 * index]) for index in range(40))
     write_vectors(
         store,
         space,
         [
-            (VectorInput(ids["auth.py"], "a", "x" * 16), many),
+            (VectorInput(ids["auth.py"], "a", "x" * 40), many),
             (VectorInput(ids["chart.py"], "c", "y"), (VectorPart(0, 1, [0.0, 1.0]),)),
         ],
     )
@@ -207,7 +212,24 @@ def test_rewrite_drops_stale_parts(store: Store) -> None:
     parts = tuple(VectorPart(index, index + 1, [1.0, float(index)]) for index in range(3))
     write_vectors(store, space, [(item, parts)])
     write_vectors(store, space, [(item, (VectorPart(0, 3, [1.0, 0.0]),))])
-    assert store.query(f"SELECT rowid FROM {space.name}") == [(vector_id(chunk_id, 0),)]
+    assert store.query(f"SELECT rowid FROM {space.name}") == store.query(
+        "SELECT id FROM vector_parts"
+    )
+    assert store.query("SELECT chunk_id, part, start_char, end_char FROM vector_parts") == [
+        (chunk_id, 0, 0, 3)
+    ]
+
+
+def test_purge_drops_vectors_of_chunks_without_meta(store: Store) -> None:
+    ingest(store, "auth.py", AUTH)
+    chunk_id = chunk_ids(store)["auth.py"]
+    space = ensure_space(store, CODE, "m", 2)
+    parts = tuple(VectorPart(index, index + 1, [1.0, float(index)]) for index in range(2))
+    write_vectors(store, space, [(VectorInput(chunk_id, "a", "xy"), parts)])
+    with store.write_transaction():
+        store.execute("DELETE FROM vectors_meta")
+    assert purge_orphans(store, space) == 2
+    assert store.query(f"SELECT count(*) FROM {space.name}") == [(0,)]
     assert store.query("SELECT count(*) FROM vector_parts") == [(0,)]
 
 

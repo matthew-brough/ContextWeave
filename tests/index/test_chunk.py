@@ -1,13 +1,20 @@
 import hashlib
+import json
 import sqlite3
 from pathlib import Path
 
 import pytest
+from tokenizers import Tokenizer
 
 from contextweave.core.config import ChunkConfig
 from contextweave.core.refs import ByteAnchor, PartAnchor, SymbolAnchor
 from contextweave.index.chunk import chunk_anchor
-from contextweave.index.chunk_tokens import EstimatorTokenizer, default_tokenizer, tokenizers
+from contextweave.index.chunk_tokens import (
+    EstimatorTokenizer,
+    FileTokenizer,
+    default_tokenizer,
+    tokenizers,
+)
 from contextweave.index.records import Chunk, FileStamp
 from contextweave.index.root import state_dir
 from contextweave.index.store import Store
@@ -196,3 +203,28 @@ def test_fixture_invariants(tmp_path: Path, path: Path) -> None:
     anchors = [chunk_anchor(c) for c in chunks]
     positional = [a for a in anchors if not isinstance(a, SymbolAnchor)]
     assert len(set(positional)) == len(positional)
+
+
+def word_tokenizer(text: str) -> FileTokenizer:
+    vocab = {word: index for index, word in enumerate([*sorted(set(text.split())), "[UNK]"])}
+    spec = {
+        "version": "1.0",
+        "model": {"type": "WordLevel", "vocab": vocab, "unk_token": "[UNK]"},
+        "pre_tokenizer": {"type": "WhitespaceSplit"},
+    }
+    return FileTokenizer(Tokenizer.from_str(json.dumps(spec)))
+
+
+def test_file_tokenizer_spans_cover_text_within_limit() -> None:
+    text = " ".join(f"w{index}" for index in range(25))
+    tokenizer = word_tokenizer(text)
+    spans = tokenizer.spans(text, 4)
+    assert "".join(text[start:end] for start, end in spans) == text
+    assert all(tokenizer.count(text[start:end]) <= 4 for start, end in spans)
+    assert len(spans) == 7
+
+
+def test_file_tokenizer_spans_prefer_a_line_end() -> None:
+    text = "a b c\nd e f g h"
+    spans = word_tokenizer(text).spans(text, 4)
+    assert spans[0] == (0, 6)

@@ -166,12 +166,13 @@ CREATE TABLE vectors_meta (
 );
 
 CREATE TABLE vector_parts (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
   space_name TEXT NOT NULL REFERENCES vec_spaces(name) ON DELETE CASCADE,
   chunk_id   INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
   part       INTEGER NOT NULL,
   start_char INTEGER NOT NULL,
   end_char   INTEGER NOT NULL,
-  PRIMARY KEY (space_name, chunk_id, part)
+  UNIQUE (space_name, chunk_id, part)
 );
 
 CREATE VIRTUAL TABLE fts_code USING fts5(
