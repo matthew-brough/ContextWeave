@@ -4,6 +4,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from http import HTTPStatus
 from typing import Protocol
 
 import httpx
@@ -72,15 +73,19 @@ class SubprocessLauncher:
 
 
 HEALTH_PATH = "/health"
+MODELS_PATH = "/v1/models"
 
 
 def http_probe(transport: httpx.BaseTransport | None = None) -> Probe:
-    """Probe that treats a 2xx from the endpoint's /health as alive (llama-server: model loaded)."""
+    """Probe alive on a 2xx from /health (llama-server: model loaded), else /v1/models when /health 404s (kev.serve)."""
 
     def probe(endpoint: str) -> bool:
+        base = endpoint.rstrip("/")
         try:
             with httpx.Client(transport=transport, timeout=PROBE_TIMEOUT_S) as client:
-                response = client.get(f"{endpoint.rstrip('/')}{HEALTH_PATH}")
+                response = client.get(f"{base}{HEALTH_PATH}")
+                if response.status_code == HTTPStatus.NOT_FOUND:
+                    response = client.get(f"{base}{MODELS_PATH}")
         except httpx.HTTPError:
             return False
         return response.is_success

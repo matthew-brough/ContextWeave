@@ -17,7 +17,7 @@ from contextweave.models.device_http import device_table
 from contextweave.models.errors import ModelDeadlineError, ModelRequestError, ModelTransportError
 from contextweave.models.health import SlotHealth
 from contextweave.models.providers import Device, EmbedKind, ProviderRegistries, Slot
-from contextweave.models.residency import Probe, Profile, ServerBackend
+from contextweave.models.residency import Probe, Profile, ServerBackend, http_probe
 from contextweave.models.slots import Done, ModelSlots, Skipped, default_registries
 
 VECTOR = {"data": [{"index": 0, "embedding": [1.0, 0.0, 0.0]}]}
@@ -438,3 +438,19 @@ def test_external_endpoint_is_probed_once(models: ModelsConfig, clock: Clock) ->
     with pytest.raises(ModelTransportError):
         backend.warm(Device.CPU)
     assert probed == ["http://127.0.0.1:8771"]
+
+
+@pytest.mark.parametrize(
+    ("routes", "alive"),
+    [
+        ({"/health": 200}, True),
+        ({"/health": 503, "/v1/models": 200}, False),
+        ({"/health": 404, "/v1/models": 200}, True),
+        ({"/health": 404, "/v1/models": 404}, False),
+    ],
+)
+def test_http_probe_falls_back_to_models_route(routes: dict[str, int], alive: bool) -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(routes.get(request.url.path, 404))
+
+    assert http_probe(httpx.MockTransport(handle))("http://kev/") is alive
