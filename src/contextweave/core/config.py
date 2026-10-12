@@ -46,7 +46,7 @@ class FuseConfig:
 
 @dataclass(frozen=True, slots=True)
 class GateConfig:
-    window: int = 8
+    window: int = 24
     expand_window: int = 8
     card_tokens: int = 128
     critical: float = 0.8

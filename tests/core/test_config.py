@@ -34,7 +34,7 @@ def test_defaults_match_spec(tmp_path: Path, xdg: dict[str, str]) -> None:
     config = load_config(tmp_path, env=xdg, strict=True).config
     assert (config.chunk.max_tokens, config.chunk.min_tokens) == (800, 40)
     assert config.fuse.keep == 100
-    assert (config.gate.window, config.gate.expand_window) == (8, 8)
+    assert (config.gate.window, config.gate.expand_window) == (24, 8)
     assert (config.gate.card_tokens, config.gate.critical) == (128, 0.8)
     assert (config.expand.min_score, config.expand.max_depth) == (0.6, 2)
     assert config.coverage.max_iterations == 2
