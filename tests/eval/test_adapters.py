@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,9 @@ from contextweave.eval.mcp_adapters import (
     extract_covered,
     extract_items,
     extract_model_calls,
+    prepare_checkout,
 )
+from contextweave.index.store import Store
 
 
 def test_catalog_names() -> None:
@@ -72,3 +75,16 @@ def test_ast_mcp_search_when_installed(tmp_path: Path, query: str) -> None:
     served = ast_mcp_adapter(AdapterContext(tmp_path)).serve_all(["xylophone"])
     assert served[0].error is None
     assert "xylophone" in served[0].items
+
+
+def test_prepare_rebuilds_stale_schema(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "m.py").write_text("def xylophone() -> None: ...\n")
+    prepare_checkout(root, {})
+    stale = sqlite3.connect(root / ".contextweave" / "index.db")
+    stale.execute("PRAGMA user_version = 2")
+    stale.close()
+    prepare_checkout(root, {})
+    with Store.open(root) as store:
+        assert [record.path for record in store.files()] == ["m.py"]

@@ -13,10 +13,12 @@ from mcp.client.stdio import stdio_client
 from contextweave.core.budget import bytes35, serialize_structured
 from contextweave.core.config import load_config
 from contextweave.core.paths import user_state_dir
+from contextweave.daemon.rebuild import build_shadow, swap_shadow
 from contextweave.eval.adapters import Adapter, AdapterContext, ScoreSample, Served, degraded
 from contextweave.eval.jsonvalue import JSON
 from contextweave.index.indexer import index_project
 from contextweave.index.projects import ProjectRegistry
+from contextweave.index.store import SchemaMismatchError
 from contextweave.models.calibration import CALIBRATION_FILE_ENV, calibration_path
 
 AST_MCP_COMMAND = "ast-mcp"
@@ -174,11 +176,15 @@ def _state_home(root: Path) -> Path:
     return root.parent / f"{root.name}.state"
 
 
-def _prepare(root: Path, env: Mapping[str, str]) -> Mapping[str, str]:
+def prepare_checkout(root: Path, env: Mapping[str, str]) -> Mapping[str, str]:
     """Index the checkout and register it in a state dir private to the eval; returns the env to serve with."""
     isolated = {**os.environ, **env, STATE_HOME_ENV: str(_state_home(root))}
     config = load_config(root, strict=False, env=isolated).config
-    index_project(root, config)
+    try:
+        index_project(root, config)
+    except SchemaMismatchError:
+        build_shadow(root, config)
+        swap_shadow(root)
     ProjectRegistry(user_state_dir(isolated)).register(root)
     return {**env, STATE_HOME_ENV: isolated[STATE_HOME_ENV]}
 
@@ -186,7 +192,7 @@ def _prepare(root: Path, env: Mapping[str, str]) -> Mapping[str, str]:
 async def _drive(
     target: ToolTarget, context: AdapterContext, queries: Sequence[str]
 ) -> tuple[Served, ...]:
-    base = _prepare(context.root, context.env) if target.indexed else context.env
+    base = prepare_checkout(context.root, context.env) if target.indexed else context.env
     env = {
         **base,
         PROFILE_ENV: context.profile,
