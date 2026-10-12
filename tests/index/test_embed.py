@@ -15,6 +15,7 @@ from contextweave.index.chunk_tokens import embed_tokenizer, model_slug, tokeniz
 from contextweave.index.derived import DerivedCache
 from contextweave.index.embed import (
     OVERSIZE,
+    call_groups,
     code_inputs,
     embed_fitting,
     embed_model_id,
@@ -366,3 +367,9 @@ def test_batches_overlap_and_land_on_their_chunks(tmp_path: Path, cache: Derived
             ((_, _, vector),) = stored[item.key]
             assert vector == pytest.approx(hashed_vector(item.text, 128), abs=1e-6), chunk_id
         assert store.query(f"SELECT count(*) FROM {space.name}")[0] == (len(inputs),)
+
+
+def test_call_groups_cap_tokens_per_call() -> None:
+    texts = ["a b", "c d e", "f", "g h i j k l"]
+    groups = call_groups(texts, WordCount(), 5)
+    assert groups == [["a b", "c d e"], ["f"], ["g h i j k l"]]

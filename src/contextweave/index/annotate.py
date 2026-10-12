@@ -23,6 +23,7 @@ STAGE = "annotate"
 PROMPT_NAME = "annotate"
 ANNOTATED_PROFILES = ("symbols", "defs", "outline")
 MAX_CONSECUTIVE_FAULTS = 8
+QUEUE_DEPTH = 4
 DEFAULT_MAX_CODE_TOKENS = 6144
 
 _ELIGIBLE = "f.profile IN (" + ", ".join(f"'{profile}'" for profile in ANNOTATED_PROFILES) + ")"
@@ -250,8 +251,8 @@ def annotate_project(
     """Annotate chunks lacking an annotation for the current model and prompt version.
 
     Cache first, so unchanged content costs no model call; max_chunks bounds model calls per
-    slice. Up to models.annotate.parallel calls run at once; results are written in chunk order
-    on this thread. Code past max_code_tokens is cut, and cut again to the server's own count
+    slice. Up to models.annotate.parallel calls run at once, QUEUE_DEPTH times that queued so a slow
+    call does not idle the other slots; results are written in chunk order on this thread. Code past max_code_tokens is cut, and cut again to the server's own count
     when it still overflows the context. A model that is down stops the pass; a malformed answer
     or a rejected request leaves that chunk pending for the next pass. Both are reported as
     degraded, never raised.
@@ -282,6 +283,8 @@ def annotate_project(
             on_progress(AnnotateProgress(total - left, total, tally.rate, _eta(left, tally.rate)))
 
     def settle(flight: _InFlight, *, counting: bool) -> bool:
+        if flight.future.cancelled():
+            return True
         outcome = flight.future.result()
         if isinstance(outcome, Done):
             tally.consecutive_faults = 0
@@ -316,10 +319,13 @@ def annotate_project(
             future = pool.submit(_generate, slots, prompt, chunk, code, attempt)
             in_flight.append(_InFlight(chunk, attempt, future))
             submitted += 1
-            if len(in_flight) >= annotate.parallel:
+            if len(in_flight) >= max(annotate.parallel, 1) * QUEUE_DEPTH:
                 going = settle(in_flight.popleft(), counting=True)
                 if not going:
                     break
+        if not going:
+            for flight in in_flight:
+                flight.future.cancel()
         while in_flight:
             going = settle(in_flight.popleft(), counting=going) and going
     pending = len(pending_chunks(store, config))

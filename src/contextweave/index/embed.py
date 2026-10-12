@@ -1,7 +1,7 @@
 import hashlib
 import math
 from collections import deque
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 
@@ -35,6 +35,8 @@ DEFAULT_BATCH = 16
 DEFAULT_MAX_INPUT_TOKENS = 8192
 WRITE_ROWS = 256
 OVERSIZE = "#parts"
+CALL_PARTS = 4
+QUEUE_DEPTH = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,6 +188,24 @@ class _Computed:
     degraded: DegradedEntry | None = None
 
 
+def call_groups(texts: Sequence[str], tokenizer: ChunkTokenizer, limit: int) -> list[list[str]]:
+    """Consecutive texts grouped so each model call carries at most limit tokens, or one text."""
+    groups: list[list[str]] = []
+    held = limit
+    for text in texts:
+        tokens = tokenizer.count(text)
+        if not groups or held + tokens > limit:
+            groups.append([])
+            held = 0
+        groups[-1].append(text)
+        held += tokens
+    return groups
+
+
+def _request(client: EmbedClient, texts: Sequence[str]) -> Callable[[], list[list[VectorPart]]]:
+    return lambda: embed_fitting(client, texts, EmbedKind.DOC)
+
+
 def _compute(
     slots: ModelSlots,
     texts: Sequence[str],
@@ -198,15 +218,17 @@ def _compute(
     flat = [
         text[start:end] for text, group in zip(texts, spans, strict=True) for start, end in group
     ]
-    outcome = slots.call(
-        Slot.EMBED,
-        lambda: embed_fitting(slots.clients.embed, flat, EmbedKind.DOC),
-        stage=STAGE,
-        budget=slots.embed_budget(EmbedKind.DOC),
-    )
-    if isinstance(outcome, Skipped):
-        return _Computed(degraded=outcome.degraded)
-    embedded = outcome.value
+    embedded: list[list[VectorPart]] = []
+    for group in call_groups(flat, tokenizer, budget * CALL_PARTS):
+        outcome = slots.call(
+            Slot.EMBED,
+            _request(slots.clients.embed, group),
+            stage=STAGE,
+            budget=slots.embed_budget(EmbedKind.DOC),
+        )
+        if isinstance(outcome, Skipped):
+            return _Computed(degraded=outcome.degraded)
+        embedded.extend(outcome.value)
     if len(embedded) != len(flat) or any(
         not parts or any(len(part.vector) != spec.dim for part in parts) for parts in embedded
     ):
@@ -291,7 +313,7 @@ def _embed_work(
     tally: _Tally,
     pace: _Pace,
 ) -> None:
-    """Embed work in batches, keeping up to pace.parallel batches in flight, settled in order."""
+    """Embed work in batches, pace.parallel at once and QUEUE_DEPTH times that queued, settled in order."""
     spec = sink.spec
     with ThreadPoolExecutor(pace.parallel, thread_name_prefix=STAGE) as pool:
         in_flight: deque[_Flight] = deque()
@@ -318,7 +340,7 @@ def _embed_work(
                 else None
             )
             in_flight.append(_Flight(batch, found, future))
-            if len(in_flight) >= pace.parallel:
+            if len(in_flight) >= pace.parallel * QUEUE_DEPTH:
                 _settle(in_flight.popleft(), sink, cache, tally)
         while in_flight:
             _settle(in_flight.popleft(), sink, cache, tally)

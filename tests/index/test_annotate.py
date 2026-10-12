@@ -9,6 +9,7 @@ from fake_embed import FakeEmbed, embed_config
 from contextweave.core.config import Config
 from contextweave.index.annotate import (
     MAX_CONSECUTIVE_FAULTS,
+    QUEUE_DEPTH,
     AnnotateProgress,
     annotate_lines,
     annotate_project,
@@ -191,8 +192,8 @@ def test_all_malformed_stops_after_limit(rig: Rig) -> None:
     rig.annotate.garbage = {"nope": 1}
     report = index_project(rig.root, rig.config, slots=rig.slots, cache=rig.cache)
     assert report.annotate is not None
-    in_flight = rig.config.models.annotate.parallel - 1
-    assert len(rig.annotate.prompts) == MAX_CONSECUTIVE_FAULTS + in_flight
+    queued = rig.config.models.annotate.parallel * QUEUE_DEPTH - 1
+    assert MAX_CONSECUTIVE_FAULTS <= len(rig.annotate.prompts) <= MAX_CONSECUTIVE_FAULTS + queued
     assert report.annotate.pending == chunk_count(rig)
 
 
