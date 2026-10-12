@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import time
 from pathlib import Path
@@ -10,12 +11,12 @@ from contextweave.core.types import JSON
 from contextweave.daemon.client import DaemonUnavailable, RemoteError
 from contextweave.daemon.lifecycle import client_for
 from contextweave.daemon.projects import ProjectManager
-from contextweave.daemon.rebuild import SHADOW_NAME, build_shadow, swap_shadow
+from contextweave.daemon.rebuild import SHADOW_NAME, STAGING_DIR, build_shadow, swap_shadow
 from contextweave.daemon.scheduler import Scheduler
 from contextweave.daemon.watcher import PollWatcher
 from contextweave.index.indexer import index_project
-from contextweave.index.root import state_dir
-from contextweave.index.store import DB_NAME, SchemaMismatchError, Store
+from contextweave.index.root import local_state, state_dir
+from contextweave.index.store import DB_NAME, SCHEMA_VERSION, SchemaMismatchError, Store
 
 pytestmark = pytest.mark.daemon
 
@@ -163,6 +164,18 @@ def test_shadow_rebuild_swaps_atomically_while_live_serves(project: Project) -> 
     assert not (state_dir(project.root) / SHADOW_NAME).exists()
     assert indexed_paths(project.root) == {"alpha.py", "beta.py", "gamma.py", "fresh.py"}
     assert not swap_shadow(project.root)
+
+
+def test_shadow_rebuild_ignores_state_left_by_an_aborted_one(project: Project) -> None:
+    stale = local_state(state_dir(project.root) / STAGING_DIR, os.environ)
+    stale.mkdir(parents=True)
+    with sqlite3.connect(stale / DB_NAME) as connection:
+        connection.execute("CREATE TABLE leftover (id INTEGER)")
+        connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION - 1}")
+    build_shadow(project.root, Config())
+    assert swap_shadow(project.root)
+    assert indexed_paths(project.root) == {"alpha.py", "beta.py", "gamma.py"}
+    assert not (state_dir(project.root) / STAGING_DIR).exists()
 
 
 def test_rebuild_rpc_swaps_and_stale_schema_triggers_rebuild(

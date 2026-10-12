@@ -44,7 +44,7 @@ def build_shadow(
     shadow = shadow_path(root)
     for suffix in ("", *SIDECARS):
         Path(f"{shadow}{suffix}").unlink(missing_ok=True)
-    staging.mkdir(parents=True)
+    state_dir(staging).mkdir(parents=True)
     try:
         with Store.open(staging, chunk_config=config.chunk, tokenizer=tokenizer) as store:
             store.root = root
