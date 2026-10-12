@@ -17,6 +17,7 @@ from contextweave.core.paths import user_state_dir
 from contextweave.daemon.rebuild import build_shadow, swap_shadow
 from contextweave.eval.adapters import Adapter, AdapterContext, ScoreSample, Served, degraded
 from contextweave.eval.jsonvalue import JSON
+from contextweave.eval.keywords import keywords
 from contextweave.index.indexer import index_project
 from contextweave.index.projects import ProjectRegistry
 from contextweave.index.store import SchemaMismatchError
@@ -28,10 +29,12 @@ DISABLE_STAGE_ENV = "CW_EVAL_DISABLE_STAGE"
 STRUCTURED_ENV = "CW_EVAL_STRUCTURED"
 PROFILE_ENV = "CW_EVAL_PROFILE"
 FULL_PROFILE = "full"
+READONLY_FLAG = "--readonly"
 CLASSIFY_STAGES = frozenset({"plan", "gate", "expand", "coverage"})
 GATE_QUESTIONS = ("answers_query", "relevance", "structural_value")
 SUFFICIENT_QUESTION = "sufficient"
 OMITTED_KEY = "omitted"
+SYMBOLS_KEY = "symbols"
 STATE_HOME_ENV = "XDG_STATE_HOME"
 CALL_TIMEOUT_SECONDS = 120.0
 
@@ -46,11 +49,12 @@ class ToolTarget:
     query_args: Mapping[str, JSON]
     indexed: bool = False
     text_only: bool = False
+    per_keyword: bool = False
 
 
 def _walk(value: JSON, found: list[dict[str, JSON]]) -> None:
     if isinstance(value, dict):
-        if isinstance(value.get("qualified_name"), str):
+        if isinstance(value.get("qualified_name"), str) or isinstance(value.get(SYMBOLS_KEY), list):
             found.append(value)
         for key, child in value.items():
             if key != OMITTED_KEY:
@@ -64,7 +68,10 @@ def extract_items(payload: JSON) -> tuple[str, ...]:
     """Qualified names of every served symbol entry, in order, deduplicated; omitted entries are skipped."""
     entries: list[dict[str, JSON]] = []
     _walk(payload, entries)
-    names = (entry["qualified_name"] for entry in entries)
+    names: list[JSON] = []
+    for entry in entries:
+        members = entry.get(SYMBOLS_KEY)
+        names.extend([entry.get("qualified_name"), *(members if isinstance(members, list) else [])])
     return tuple(dict.fromkeys(name for name in names if isinstance(name, str)))
 
 
@@ -202,7 +209,7 @@ async def _drive(
 ) -> tuple[Served, ...]:
     base = (
         prepare_checkout(context.root, context.env, context.profile)
-        if target.indexed
+        if target.indexed and not context.live
         else context.env
     )
     env = {
@@ -214,9 +221,9 @@ async def _drive(
         env[DISABLE_STAGE_ENV] = context.ablate
     if target.text_only:
         env[STRUCTURED_ENV] = "1"
-    params = StdioServerParameters(
-        command=target.command, args=list(target.args), env=env, cwd=context.root
-    )
+    live_index = target.indexed and context.live
+    args = [*target.args, READONLY_FLAG] if live_index else list(target.args)
+    params = StdioServerParameters(command=target.command, args=args, env=env, cwd=context.root)
     async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
         await session.initialize()
         tools = {tool.name for tool in (await session.list_tools()).tools}
@@ -224,10 +231,36 @@ async def _drive(
             return degraded(len(queries), f"tool missing: {target.tool}")
         return tuple(
             [
-                await _query(session, target, query, context.expected.get(query, ()))
+                await _query_target(session, target, query, context.expected.get(query, ()))
                 for query in queries
             ]
         )
+
+
+async def _query_target(
+    session: ClientSession, target: ToolTarget, query: str, expected: Sequence[str]
+) -> Served:
+    words = keywords(query) if target.per_keyword else ()
+    if not words:
+        return await _query(session, target, query, expected)
+    parts = [await _query(session, target, word, expected) for word in words]
+    return merge_served(parts)
+
+
+def merge_served(parts: Sequence[Served]) -> Served:
+    """One result for several tool calls answering the same query."""
+    items = tuple(dict.fromkeys(item for part in parts for item in part.items))
+    errors = [part.error for part in parts if part.error is not None]
+    return Served(
+        items,
+        sum(part.tokens for part in parts),
+        sum(part.latency_ms for part in parts),
+        sum(part.model_calls for part in parts),
+        None,
+        errors[0] if errors else None,
+        tuple(sample for part in parts for sample in part.samples),
+        sum(part.skips for part in parts),
+    )
 
 
 class McpAdapter:
@@ -247,8 +280,8 @@ class McpAdapter:
 
 
 def ast_mcp_adapter(context: AdapterContext) -> Adapter:
-    """ast-mcp search_symbols over stdio."""
-    target = ToolTarget(AST_MCP_COMMAND, ("serve",), "search_symbols", {})
+    """ast-mcp search_symbols over stdio, one call per query keyword as an agent would name them."""
+    target = ToolTarget(AST_MCP_COMMAND, ("serve",), "search_symbols", {}, per_keyword=True)
     return McpAdapter(target, context)
 
 

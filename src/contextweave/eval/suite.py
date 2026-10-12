@@ -5,6 +5,7 @@ from pathlib import Path
 from contextweave.eval.jsonvalue import JSON
 
 SUITES_DIR = Path(__file__).parent / "suites"
+LIVE_COMMIT = "live"
 
 
 class SuiteError(Exception):
@@ -28,6 +29,11 @@ class Suite:
     repo: str
     commit: str
     cases: tuple[Case, ...]
+
+    @property
+    def live(self) -> bool:
+        """Served from the registered index of repo in place, not a pinned checkout."""
+        return self.commit == LIVE_COMMIT
 
 
 def _strings(value: JSON, where: str) -> tuple[str, ...]:
@@ -79,10 +85,11 @@ def parse_suite(name: str, text: str) -> Suite:
 
 
 def load_suite(name: str, directory: Path = SUITES_DIR) -> Suite:
-    """Load suites/<name>.toml."""
-    path = directory / f"{name}.toml"
+    """Load suites/<name>.toml, or name itself when it is a path to a .toml file."""
+    given = Path(name)
+    path = given if given.suffix == ".toml" else directory / f"{name}.toml"
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise SuiteError(f"suite not found: {name}") from exc
-    return parse_suite(name, text)
+    return parse_suite(path.stem, text)

@@ -1,6 +1,8 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from contextweave.index.store import Store
 from contextweave.index.walk import walk_project
 from contextweave.lang.extract_symbols import extract_symbols
 from contextweave.lang.parse import parse_bytes
@@ -38,3 +40,17 @@ def build_symbol_map(root: Path) -> SymbolMap:
             if walked.path not in paths:
                 paths.append(walked.path)
     return SymbolMap(by_path, {name: tuple(paths) for name, paths in by_name.items()})
+
+
+def indexed_symbol_map(root: Path, names: Iterable[str]) -> SymbolMap:
+    """The paths defining names, and every symbol in those paths, read from root's index."""
+    by_name: dict[str, tuple[str, ...]] = {}
+    by_path: dict[str, tuple[str, ...]] = {}
+    with Store.open(root, readonly=True) as store:
+        for name in names:
+            paths = tuple(dict.fromkeys(r.path for r in store.symbols_by_qualified_name(name)))
+            by_name[name] = paths
+            for path in paths:
+                if path not in by_path:
+                    by_path[path] = tuple(r.qualified_name for r in store.symbols_in_file(path))
+    return SymbolMap(by_path, by_name)

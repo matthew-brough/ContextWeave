@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Protocol
 
 from contextweave.core.budget import bytes35
-from contextweave.eval.symbols import SymbolMap, build_symbol_map
+from contextweave.eval.symbols import SymbolMap, build_symbol_map, indexed_symbol_map
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +17,7 @@ class AdapterContext:
     ablate: str | None = None
     env: Mapping[str, str] = field(default_factory=dict[str, str])
     expected: Mapping[str, Sequence[str]] = field(default_factory=dict[str, Sequence[str]])
+    live: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,12 +57,19 @@ def degraded(count: int, error: str) -> tuple[Served, ...]:
     return tuple(Served(error=error) for _ in range(count))
 
 
+def _symbol_map(context: AdapterContext) -> SymbolMap:
+    if not context.live:
+        return build_symbol_map(context.root)
+    names = {name for expected in context.expected.values() for name in expected}
+    return indexed_symbol_map(context.root, names)
+
+
 class ReadAdapter:
     """Baseline that serves whole files of the expected symbols' paths."""
 
     def __init__(self, context: AdapterContext, symbols: SymbolMap | None = None) -> None:
         self._context = context
-        self._symbols = symbols if symbols is not None else build_symbol_map(context.root)
+        self._symbols = symbols if symbols is not None else _symbol_map(context)
 
     def _serve(self, query: str) -> Served:
         started = time.perf_counter()

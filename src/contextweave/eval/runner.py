@@ -51,7 +51,7 @@ def run_suite(
 ) -> RunReport:
     """Serve every case through the named adapter and score it."""
     expected = {case.query: case.expect for case in suite.cases}
-    context = AdapterContext(root, profile, ablate, env or {}, expected)
+    context = AdapterContext(root, profile, ablate, env or {}, expected, suite.live)
     served = adapters.get(adapter)(context).serve_all([case.query for case in suite.cases])
     results = tuple(score_case(case, item) for case, item in zip(suite.cases, served, strict=True))
     samples = [sample for item in served for sample in item.samples]

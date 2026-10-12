@@ -132,7 +132,9 @@ def run_eval(options: EvalOptions, deps: EvalDeps | None = None) -> int:
             wiring.adapters.get(name)
         chosen = [wiring.variants.get(name) for name in options.variants]
         checkout: Checkout = wiring.checkout or materialise
-        root = checkout(suite, user_cache_dir(wiring.env) / "eval")
+        root = (
+            Path(suite.repo) if suite.live else checkout(suite, user_cache_dir(wiring.env) / "eval")
+        )
     except UnknownKeyError as exc:
         _say(f"unknown adapter: {exc}")
         return EXIT_USAGE

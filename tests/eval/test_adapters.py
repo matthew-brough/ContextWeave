@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from contextweave.core.budget import bytes35
+from contextweave.core.config import load_config
 from contextweave.eval.adapters import AdapterContext, ReadAdapter
 from contextweave.eval.catalog import default_adapters
 from contextweave.eval.jsonvalue import JSON
@@ -15,11 +16,12 @@ from contextweave.eval.mcp_adapters import (
     extract_model_calls,
     prepare_checkout,
 )
+from contextweave.index.indexer import index_project
 from contextweave.index.store import Store
 
 
 def test_catalog_names() -> None:
-    assert default_adapters().names() == ("read", "ast_mcp", "cw")
+    assert default_adapters().names() == ("read", "grep", "ast_mcp", "cw")
 
 
 def test_read_adapter(tmp_path: Path) -> None:
@@ -41,6 +43,10 @@ def test_extract_helpers() -> None:
         "model_calls": 2,
     }
     assert extract_items(payload) == ("A", "B")
+    group: JSON = {
+        "items": [{"qualified_name": None, "symbols": ["C", "D"]}, {"symbols": [{"x": 1}]}]
+    }
+    assert extract_items(group) == ("C", "D")
     assert extract_covered(payload) is True
     assert extract_covered({"coverage": {"sufficient": False}}) is False
     assert extract_covered({}) is None
@@ -88,3 +94,15 @@ def test_prepare_rebuilds_stale_schema(tmp_path: Path) -> None:
     prepare_checkout(root, {})
     with Store.open(root) as store:
         assert [record.path for record in store.files()] == ["m.py"]
+
+
+def test_read_adapter_live_resolves_from_index(tmp_path: Path) -> None:
+    (tmp_path / "m.py").write_text("class A:\n    def f(self) -> None: ...\n")
+    index_project(tmp_path, load_config(tmp_path, strict=False).config)
+    (tmp_path / "m.py").write_text(
+        "class A:\n    def f(self) -> None: ...\n\ndef g() -> None: ...\n"
+    )
+    context = AdapterContext(tmp_path, expected={"q": ["A.f", "g"]}, live=True)
+    served = ReadAdapter(context).serve_all(["q"])[0]
+    assert served.items == ("A", "A.f")
+    assert served.error == "unresolved: g"

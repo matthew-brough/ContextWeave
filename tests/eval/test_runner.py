@@ -7,6 +7,7 @@ import pytest
 from contextweave.core.registry import Registry
 from contextweave.eval.adapters import AdapterContext, AdapterFactory, Served
 from contextweave.eval.baselines import Baseline, write_baseline
+from contextweave.eval.checkout import CheckoutError
 from contextweave.eval.cli_entry import (
     EvalDeps,
     EvalOptions,
@@ -15,7 +16,7 @@ from contextweave.eval.cli_entry import (
     run_eval,
 )
 from contextweave.eval.runner import render_delta, render_table, run_suite
-from contextweave.eval.suite import parse_suite
+from contextweave.eval.suite import Suite, parse_suite
 
 SUITE = parse_suite(
     "fake",
@@ -118,3 +119,24 @@ def test_parser_wiring() -> None:
     options = options_from_args(args)
     assert options == EvalOptions("self", ("read", "cw"), "vector", "nomodel", True, False)
     assert options_from_args(parser.parse_args(["eval"])).adapters == ("cw",)
+
+
+def test_live_suite_serves_repo_without_checkout(tmp_path: Path) -> None:
+    seen: list[AdapterContext] = []
+
+    def factory(context: AdapterContext) -> FakeAdapter:
+        seen.append(context)
+        return FakeAdapter(context)
+
+    def no_checkout(suite: Suite, cache: Path) -> Path:
+        raise CheckoutError("live suites must not check out")
+
+    registry: Registry[str, AdapterFactory] = Registry()
+    registry.register("cw", factory)
+    suite_file = tmp_path / "live.toml"
+    suite_file.write_text(
+        f'repo = "{tmp_path}"\ncommit = "live"\n[[case]]\nquery = "q1"\nexpect = ["a"]\n'
+    )
+    deps = EvalDeps(adapters=registry, checkout=no_checkout, env={})
+    assert run_eval(EvalOptions(suite=str(suite_file)), deps) == 0
+    assert [(context.root, context.live) for context in seen] == [(tmp_path, True)]

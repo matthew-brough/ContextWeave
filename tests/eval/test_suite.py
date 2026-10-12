@@ -98,3 +98,11 @@ def test_self_suite_is_well_formed() -> None:
     suite = load_suite("self")
     assert len(suite.cases) >= 12
     assert len(suite.commit) == 40
+
+
+def test_load_suite_by_path_and_live(tmp_path: Path) -> None:
+    path = tmp_path / "mine.toml"
+    path.write_text(GOOD.replace('commit = "abc"', 'commit = "live"'))
+    suite = load_suite(str(path))
+    assert (suite.name, suite.live) == ("mine", True)
+    assert not parse_suite("demo", GOOD).live
