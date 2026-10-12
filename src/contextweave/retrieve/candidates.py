@@ -57,6 +57,7 @@ class Candidate:
     qualified_name: str | None = None
     kind: str | None = None
     symbols: tuple[str, ...] = ()
+    section: tuple[int, int] | None = None
     ranks: Ranks = field(default_factory=Ranks)
     scores: Scores = field(default_factory=Scores)
     fused: float = 0.0

@@ -15,6 +15,8 @@ type SpaceStatus = Literal["building", "live", "retired"]
 CODE: SpaceKind = "code"
 ANNOT: SpaceKind = "annot"
 KINDS: tuple[SpaceKind, ...] = (CODE, ANNOT)
+PART_BITS = 4
+MAX_PARTS = 1 << PART_BITS
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +37,30 @@ class VectorInput:
     chunk_id: int
     key: str
     text: str
+
+
+@dataclass(frozen=True, slots=True)
+class VectorPart:
+    """One embedded section of an input, as character offsets into its text."""
+
+    start: int
+    end: int
+    vector: Sequence[float]
+
+
+def vector_id(chunk_id: int, part: int) -> int:
+    """The vec0 rowid of one part of a chunk."""
+    return (chunk_id << PART_BITS) | part
+
+
+def chunk_of(rowid: int) -> int:
+    """The chunk a vec0 rowid belongs to."""
+    return rowid >> PART_BITS
+
+
+def part_of(rowid: int) -> int:
+    """The part index a vec0 rowid holds."""
+    return rowid & (MAX_PARTS - 1)
 
 
 def space_name(kind: SpaceKind, model_id: str, dim: int) -> str:
@@ -136,17 +162,43 @@ def pending_inputs(
     return tuple(item for item in inputs if held.get(item.chunk_id) != item.key)
 
 
+def _held_parts(store: Store, space: Space, chunk_id: int) -> list[int]:
+    rows = store.query(
+        "SELECT part FROM vector_parts WHERE space_name = ? AND chunk_id = ?",
+        (space.name, chunk_id),
+    )
+    return [int(str(row[0])) for row in rows] or [0]
+
+
 def write_vectors(
-    store: Store, space: Space, rows: Sequence[tuple[VectorInput, Sequence[float]]]
+    store: Store, space: Space, rows: Sequence[tuple[VectorInput, Sequence[VectorPart]]]
 ) -> None:
-    """Replace the vectors of the given chunks in one transaction."""
+    """Replace the vector parts of the given chunks in one transaction; parts past MAX_PARTS drop."""
     with store.write_transaction():
-        for item, vector in rows:
-            store.execute(f"DELETE FROM {space.name} WHERE rowid = ?", (item.chunk_id,))
+        for item, parts in rows:
+            for part in _held_parts(store, space, item.chunk_id):
+                store.execute(
+                    f"DELETE FROM {space.name} WHERE rowid = ?", (vector_id(item.chunk_id, part),)
+                )
             store.execute(
-                f"INSERT INTO {space.name} (rowid, embedding) VALUES (?, ?)",
-                (item.chunk_id, sqlite_vec.serialize_float32(list(vector))),
+                "DELETE FROM vector_parts WHERE space_name = ? AND chunk_id = ?",
+                (space.name, item.chunk_id),
             )
+            kept = parts[:MAX_PARTS]
+            for index, part in enumerate(kept):
+                store.execute(
+                    f"INSERT INTO {space.name} (rowid, embedding) VALUES (?, ?)",
+                    (
+                        vector_id(item.chunk_id, index),
+                        sqlite_vec.serialize_float32(list(part.vector)),
+                    ),
+                )
+                if len(kept) > 1:
+                    store.execute(
+                        "INSERT INTO vector_parts"
+                        " (space_name, chunk_id, part, start_char, end_char) VALUES (?, ?, ?, ?, ?)",
+                        (space.name, item.chunk_id, index, part.start, part.end),
+                    )
             store.execute(
                 "INSERT OR REPLACE INTO vectors_meta (chunk_id, space_name, content_hash)"
                 " VALUES (?, ?, ?)",
@@ -154,11 +206,27 @@ def write_vectors(
             )
 
 
+def part_spans(
+    store: Store, space: Space, parts: Sequence[tuple[int, int]]
+) -> dict[tuple[int, int], tuple[int, int]]:
+    """Character spans of the given (chunk id, part) pairs that belong to multi-part chunks."""
+    spans: dict[tuple[int, int], tuple[int, int]] = {}
+    for chunk_id, part in parts:
+        rows = store.query(
+            "SELECT start_char, end_char FROM vector_parts"
+            " WHERE space_name = ? AND chunk_id = ? AND part = ?",
+            (space.name, chunk_id, part),
+        )
+        if rows:
+            spans[(chunk_id, part)] = (int(str(rows[0][0])), int(str(rows[0][1])))
+    return spans
+
+
 def purge_orphans(store: Store, space: Space) -> int:
     """Delete vectors whose chunk no longer has a vectors_meta row; returns how many."""
     held = indexed_keys(store, space)
     stored = [int(str(row[0])) for row in store.query(f"SELECT rowid FROM {space.name}")]
-    orphans = [rowid for rowid in stored if rowid not in held]
+    orphans = [rowid for rowid in stored if chunk_of(rowid) not in held]
     if orphans:
         with store.write_transaction():
             for rowid in orphans:

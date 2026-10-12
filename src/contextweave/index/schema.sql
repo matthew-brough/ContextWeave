@@ -165,6 +165,15 @@ CREATE TABLE vectors_meta (
   PRIMARY KEY (chunk_id, space_name)
 );
 
+CREATE TABLE vector_parts (
+  space_name TEXT NOT NULL REFERENCES vec_spaces(name) ON DELETE CASCADE,
+  chunk_id   INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+  part       INTEGER NOT NULL,
+  start_char INTEGER NOT NULL,
+  end_char   INTEGER NOT NULL,
+  PRIMARY KEY (space_name, chunk_id, part)
+);
+
 CREATE VIRTUAL TABLE fts_code USING fts5(
   name, qualified_name, signature, docstring, body, annotation, path
 );

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from contextweave.index.derived import (
+    WHOLE,
     DerivedAnnotation,
     DerivedCache,
     cached_or_compute,
@@ -140,3 +141,24 @@ def test_cached_or_compute_avoids_compute(cache: DerivedCache) -> None:
     assert calls == [["a", "bb"], ["ccc"]]
     cached_or_compute(["a", "bb", "ccc"], lookup, compute, store)
     assert len(calls) == 2
+
+
+def test_parts_round_trip_and_replace(cache: DerivedCache) -> None:
+    cache.put_parts({"h": [(0, 4, [1.0]), (4, 9, [2.0])]}, "s", "m", 1)
+    assert cache.get_parts(["h"], "s", "m", 1) == {"h": ((0, 4, (1.0,)), (4, 9, (2.0,)))}
+    cache.put_parts({"h": [(0, 9, [3.0])]}, "s", "m", 1)
+    assert cache.get_parts(["h"], "s", "m", 1) == {"h": ((0, WHOLE, (3.0,)),)}
+    assert cache.get_vectors(["h"], "s", "m", 1) == {"h": (3.0,)}
+
+
+def test_parts_of_a_suffixed_key_stay_apart(cache: DerivedCache) -> None:
+    cache.put_parts({"h#parts": [(0, 4, [1.0]), (4, 9, [2.0])]}, "s", "m", 1)
+    assert cache.get_parts(["h"], "s", "m", 1) == {}
+    assert len(cache.get_parts(["h#parts"], "s", "m", 1)["h#parts"]) == 2
+
+
+def test_gc_keeps_parts_of_registered_hashes(cache: DerivedCache) -> None:
+    cache.put_parts({"keep#parts": [(0, 1, [1.0]), (1, 2, [2.0])]}, "s", "m", 1)
+    cache.put_parts({"drop": [(0, 1, [1.0]), (1, 2, [2.0])]}, "s", "m", 1)
+    assert cache.gc(lambda: ["keep"]).vectors == 2
+    assert set(cache.get_parts(["keep#parts", "drop"], "s", "m", 1)) == {"keep#parts"}

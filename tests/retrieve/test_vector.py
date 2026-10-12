@@ -9,11 +9,20 @@ from contextweave.core.config import Config
 from contextweave.index.derived import DerivedCache
 from contextweave.index.embed import embed_project
 from contextweave.index.store import Store
+from contextweave.index.vectors import (
+    CODE,
+    VectorInput,
+    VectorPart,
+    ensure_space,
+    vector_id,
+    write_vectors,
+)
 from contextweave.models.slots import ModelSlots
 from contextweave.retrieve.candidates import CandidateSet
 from contextweave.retrieve.context import Mode
 from contextweave.retrieve.retrieve_stage import RetrieveStage
 from contextweave.retrieve.stages import QueryContext
+from contextweave.retrieve.vector import knn
 
 AUTH = (
     "def check_credentials(user, password):\n    return verify_hash(user.password_hash, password)\n"
@@ -140,3 +149,74 @@ def test_no_models_is_silent_in_auto(store: Store, config: Config) -> None:
     ctx, cands = retrieve(store, "password", "auto", replace(config), None)
     assert ctx.envelope.degraded == []
     assert len(cands) > 0
+
+
+def chunk_ids(store: Store) -> dict[str, int]:
+    rows = store.query("SELECT f.path, c.id FROM chunks c JOIN files f ON f.id = c.file_id")
+    return {str(path): int(str(chunk_id)) for path, chunk_id in rows}
+
+
+def test_knn_ranks_chunk_by_closest_part_and_reports_it(store: Store) -> None:
+    ingest(store, "auth.py", AUTH)
+    ingest(store, "chart.py", CHART)
+    ids = chunk_ids(store)
+    space = ensure_space(store, CODE, "m", 2)
+    far, near, mid = [0.0, 1.0], [1.0, 0.0], [0.7, 0.7]
+    write_vectors(
+        store,
+        space,
+        [
+            (
+                VectorInput(ids["auth.py"], "a", "x" * 20),
+                (VectorPart(0, 10, far), VectorPart(10, 20, near)),
+            ),
+            (VectorInput(ids["chart.py"], "c", "y"), (VectorPart(0, 1, mid),)),
+        ],
+    )
+    hits = knn(store, space, [1.0, 0.0], scope=None, limit=2)
+    assert [(chunk_id, part) for chunk_id, _, part in hits] == [
+        (ids["auth.py"], 1),
+        (ids["chart.py"], 0),
+    ]
+    assert hits[0][1] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_knn_refetches_until_enough_distinct_chunks(store: Store) -> None:
+    ingest(store, "auth.py", AUTH)
+    ingest(store, "chart.py", CHART)
+    ids = chunk_ids(store)
+    space = ensure_space(store, CODE, "m", 2)
+    many = tuple(VectorPart(index, index + 1, [1.0, 0.001 * index]) for index in range(16))
+    write_vectors(
+        store,
+        space,
+        [
+            (VectorInput(ids["auth.py"], "a", "x" * 16), many),
+            (VectorInput(ids["chart.py"], "c", "y"), (VectorPart(0, 1, [0.0, 1.0]),)),
+        ],
+    )
+    hits = knn(store, space, [1.0, 0.0], scope=None, limit=2)
+    assert [chunk_id for chunk_id, _, _ in hits] == [ids["auth.py"], ids["chart.py"]]
+
+
+def test_rewrite_drops_stale_parts(store: Store) -> None:
+    ingest(store, "auth.py", AUTH)
+    chunk_id = chunk_ids(store)["auth.py"]
+    space = ensure_space(store, CODE, "m", 2)
+    item = VectorInput(chunk_id, "a", "x" * 3)
+    parts = tuple(VectorPart(index, index + 1, [1.0, float(index)]) for index in range(3))
+    write_vectors(store, space, [(item, parts)])
+    write_vectors(store, space, [(item, (VectorPart(0, 3, [1.0, 0.0]),))])
+    assert store.query(f"SELECT rowid FROM {space.name}") == [(vector_id(chunk_id, 0),)]
+    assert store.query("SELECT count(*) FROM vector_parts") == [(0,)]
+
+
+def test_semantic_hit_on_a_later_part_carries_its_section(
+    embedded: Store, config: Config, slots: ModelSlots, cache: DerivedCache
+) -> None:
+    embed_project(embedded, slots, cache, config, max_input_tokens=8)
+    ctx, cands = retrieve(embedded, "verify the user password", "semantic", config, slots)
+    assert ctx.envelope.degraded == []
+    sections = [cand.section for cand in cands]
+    assert all(section is not None for section in sections)
+    assert all(start < end for start, end in filter(None, sections))

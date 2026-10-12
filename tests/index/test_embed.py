@@ -3,6 +3,7 @@ import threading
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -13,15 +14,18 @@ from contextweave.core.types import JSON
 from contextweave.index.chunk_tokens import embed_tokenizer, model_slug, tokenizer_file
 from contextweave.index.derived import DerivedCache
 from contextweave.index.embed import (
+    OVERSIZE,
     code_inputs,
     embed_fitting,
     embed_model_id,
     embed_project,
+    oversize,
+    split_spans,
     truncate_to_tokens,
 )
 from contextweave.index.indexer import index_project
 from contextweave.index.store import Store
-from contextweave.index.vectors import CODE, find_space, spaces
+from contextweave.index.vectors import CODE, VectorInput, VectorPart, find_space, spaces
 from contextweave.models.errors import ModelContextError
 from contextweave.models.providers import Device, EmbedKind
 from contextweave.models.slots import ModelSlots, default_registries
@@ -169,13 +173,71 @@ def test_input_is_truncated_to_the_budget_but_keyed_by_full_content(
         assert isinstance(full, str) and len(sent) < len(full)
 
 
-def test_truncate_to_tokens_keeps_longest_prefix_within_limit() -> None:
-    class WordCount:
-        def count(self, text: str) -> int:
-            return len(text.split())
+class WordCount:
+    def count(self, text: str) -> int:
+        return len(text.split())
 
+
+def test_truncate_to_tokens_keeps_longest_prefix_within_limit() -> None:
     assert truncate_to_tokens("a b c d e", WordCount(), 3).split() == ["a", "b", "c"]
     assert truncate_to_tokens("a b", WordCount(), 3) == "a b"
+
+
+def test_split_spans_covers_text_in_capped_spans() -> None:
+    text = "a b c d e f g"
+    spans = split_spans(text, WordCount(), 3)
+    assert "".join(text[start:end] for start, end in spans) == text
+    assert all(WordCount().count(text[start:end]) <= 3 for start, end in spans)
+    assert len(split_spans(text, WordCount(), 1, max_parts=2)) == 2
+    assert split_spans("", WordCount(), 3) == [(0, 0)]
+
+
+def test_oversize_rekeys_only_inputs_over_budget() -> None:
+    short, long = VectorInput(1, "h1", "a b"), VectorInput(2, "h2", "a b c d e")
+    assert [item.key for item in oversize([short, long], WordCount(), 3)] == ["h1", "h2" + OVERSIZE]
+
+
+def test_long_chunk_stores_a_vector_per_part(tmp_path: Path, cache: DerivedCache) -> None:
+    fake = FakeEmbed(embed_config())
+    config = config_for(fake.config)
+    root = project(tmp_path)
+    assert index(root, fake, config, cache) > 0
+    with Store.open(root) as store:
+        fake.calls.clear()
+        report = embed_project(store, slots_for(fake, config), cache, config, max_input_tokens=12)
+        assert report.pending == 0
+        chunks = len(store.query("SELECT id FROM chunks"))
+        assert len(fake.texts) > chunks
+        full = "".join(str(row[0]) for row in store.query("SELECT body FROM fts_code"))
+        assert all(line in "".join(fake.texts) for line in full.splitlines() if line.strip())
+        (space,) = spaces(store)
+        ((parts,),) = store.query("SELECT count(*) FROM vector_parts")
+        assert store.query(f"SELECT count(*) FROM {space.name}")[0] == (parts,)
+        assert int(str(parts)) > chunks
+        inputs = {item.chunk_id: item.text for item in code_inputs(store)}
+        for chunk_id, text in inputs.items():
+            rows = store.query(
+                "SELECT start_char, end_char FROM vector_parts WHERE chunk_id = ? ORDER BY part",
+                (chunk_id,),
+            )
+            assert "".join(text[int(str(a)) : int(str(b))] for a, b in rows) == text
+        fake.calls.clear()
+        embed_project(store, slots_for(fake, config), cache, config, max_input_tokens=12)
+        assert fake.texts == []
+
+
+def test_cached_parts_refill_a_fresh_store(tmp_path: Path, cache: DerivedCache) -> None:
+    fake = FakeEmbed(embed_config())
+    config = config_for(fake.config)
+    first, second = project(tmp_path, "one"), project(tmp_path, "two")
+    for root in (first, second):
+        index(root, fake, config, cache)
+        with Store.open(root) as store:
+            embed_project(store, slots_for(fake, config), cache, config, max_input_tokens=12)
+    with Store.open(first) as one, Store.open(second) as two:
+        query = "SELECT count(*) FROM vector_parts"
+        assert one.query(query) == two.query(query)
+        assert one.query(query)[0] != (0,)
 
 
 def test_local_tokenizer_json_is_used_when_present(tmp_path: Path) -> None:
@@ -245,9 +307,12 @@ class ContextLimitedEmbed:
 
 def test_embed_fitting_splits_batch_and_recuts_the_long_item() -> None:
     client = ContextLimitedEmbed(100)
-    vectors = embed_fitting(client, ["short", "x" * 400, "tiny"], EmbedKind.DOC)
-    assert vectors == [[5.0], [float(int(400 * 0.25 * 0.85))], [4.0]]
-    assert [len(call) for call in client.calls] == [3, 1, 1, 1, 1]
+    short, long, tiny = embed_fitting(client, ["short", "x" * 400, "tiny"], EmbedKind.DOC)
+    assert short == [VectorPart(0, 5, [5.0])] and tiny == [VectorPart(0, 4, [4.0])]
+    assert long[0].start == 0 and long[-1].end == 400
+    assert all(a.end == b.start for a, b in pairwise(long))
+    assert all(part.end - part.start <= 100 for part in long)
+    assert all(part.vector == [float(part.end - part.start)] for part in long)
 
 
 @dataclass(slots=True)
@@ -297,7 +362,7 @@ def test_batches_overlap_and_land_on_their_chunks(tmp_path: Path, cache: Derived
         inputs = {item.chunk_id: item for item in code_inputs(store)}
         assert report.embedded == len(inputs)
         for chunk_id, item in inputs.items():
-            stored = cache.get_vectors([item.key], CODE, embed_model_id(config.models.embed), 128)
-            expected = hashed_vector(item.text, 128)
-            assert stored[item.key] == pytest.approx(expected, abs=1e-6), chunk_id
+            stored = cache.get_parts([item.key], CODE, embed_model_id(config.models.embed), 128)
+            ((_, _, vector),) = stored[item.key]
+            assert vector == pytest.approx(hashed_vector(item.text, 128), abs=1e-6), chunk_id
         assert store.query(f"SELECT count(*) FROM {space.name}")[0] == (len(inputs),)

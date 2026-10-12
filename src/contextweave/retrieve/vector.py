@@ -1,5 +1,6 @@
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 import sqlite_vec
 
@@ -9,8 +10,12 @@ from contextweave.index.store import SqlValue, Store
 from contextweave.index.vectors import (
     CODE,
     KINDS,
+    PART_BITS,
     Space,
+    chunk_of,
     find_space,
+    part_of,
+    part_spans,
     spaces,
     vec_available,
 )
@@ -31,27 +36,51 @@ OVERFETCH = 4
 
 def knn(
     store: Store, space: Space, vector: Sequence[float], *, scope: str | None, limit: int
-) -> list[tuple[int, float]]:
-    """Nearest chunks by cosine distance within the path scope; vectors lacking metadata drop out."""
+) -> list[tuple[int, float, int]]:
+    """Nearest chunks by their closest part's cosine distance within the path scope, with that part.
+
+    Parts are over-fetched and the fetch doubles while too few distinct chunks come back; vectors
+    lacking metadata drop out.
+    """
     if limit <= 0:
         return []
     clause, params = scope_clause("f.path", scope)
     sql = (
-        "SELECT nearest.rowid, nearest.distance FROM"
-        f" (SELECT rowid, distance FROM {space.name} WHERE embedding MATCH ? AND k = ?) nearest"
-        " JOIN vectors_meta m ON m.chunk_id = nearest.rowid AND m.space_name = ?"
-        " JOIN chunks c ON c.id = nearest.rowid JOIN files f ON f.id = c.file_id"
-        f" WHERE {clause}"
-        " ORDER BY nearest.distance, f.path, c.start_byte, c.end_byte, c.id LIMIT ?"
+        f"SELECT nearest.rowid, nearest.distance, coalesce(m.chunk_id IS NOT NULL AND {clause}, 0)"
+        f" FROM (SELECT rowid, distance FROM {space.name} WHERE embedding MATCH ? AND k = ?) nearest"
+        f" LEFT JOIN vectors_meta m ON m.chunk_id = nearest.rowid >> {PART_BITS}"
+        " AND m.space_name = ?"
+        " LEFT JOIN chunks c ON c.id = m.chunk_id LEFT JOIN files f ON f.id = c.file_id"
+        " ORDER BY nearest.distance, f.path, c.start_byte, c.end_byte, c.id"
     )
-    bound: list[SqlValue] = [
-        sqlite_vec.serialize_float32(list(vector)),
-        min(limit * OVERFETCH, MAX_KNN),
-        space.name,
-        *params,
-        limit,
-    ]
-    return [(int(str(row[0])), float(str(row[1]))) for row in store.query(sql, bound)]
+    query = sqlite_vec.serialize_float32(list(vector))
+    fetch = min(limit * OVERFETCH, MAX_KNN)
+    while True:
+        bound: list[SqlValue] = [*params, query, fetch, space.name]
+        rows = store.query(sql, bound)
+        nearest: dict[int, tuple[float, int]] = {}
+        for row in rows:
+            rowid = int(str(row[0]))
+            chunk_id = chunk_of(rowid)
+            if row[2] and chunk_id not in nearest:
+                nearest[chunk_id] = (float(str(row[1])), part_of(rowid))
+        if len(nearest) >= limit or len(rows) < fetch or fetch >= MAX_KNN:
+            break
+        fetch = min(fetch * 2, MAX_KNN)
+    return [(chunk_id, distance, part) for chunk_id, (distance, part) in nearest.items()][:limit]
+
+
+def _sections(
+    store: Store, best: Mapping[int, tuple[float, Space, int]]
+) -> dict[int, tuple[int, int]]:
+    by_space: dict[str, tuple[Space, list[tuple[int, int]]]] = {}
+    for chunk_id, (_, space, part) in best.items():
+        by_space.setdefault(space.name, (space, []))[1].append((chunk_id, part))
+    found: dict[int, tuple[int, int]] = {}
+    for space, parts in by_space.values():
+        for (chunk_id, _), span in part_spans(store, space, parts).items():
+            found[chunk_id] = span
+    return found
 
 
 def _skip(ctx: QueryContext, reason: str, device: str | None = None) -> tuple[Candidate, ...]:
@@ -95,20 +124,24 @@ def vector_search(ctx: QueryContext, scope: str | None, limit: int) -> tuple[Can
     if len(outcome.value) != 1:
         return _skip(ctx, SKIP_VEC)
     vector = outcome.value[0]
-    best: dict[int, float] = {}
+    best: dict[int, tuple[float, Space, int]] = {}
     try:
         for space in live:
             if len(vector) != space.dim:
                 return _skip(ctx, f"{SKIP_VEC}: dim_mismatch")
-            for chunk_id, distance in knn(ctx.store, space, vector, scope=scope, limit=limit):
-                best[chunk_id] = min(distance, best.get(chunk_id, distance))
+            for chunk_id, distance, part in knn(ctx.store, space, vector, scope=scope, limit=limit):
+                held = best.get(chunk_id)
+                if held is None or distance < held[0]:
+                    best[chunk_id] = (distance, space, part)
+        sections = _sections(ctx.store, best)
     except sqlite3.Error:
         return _skip(ctx, f"{SKIP_VEC}: vec_query_failed")
     loaded = load_candidates(ctx.store, tuple(best))
     ordered = sorted(
         (loaded[chunk_id] for chunk_id in best if chunk_id in loaded),
-        key=lambda cand: (best[cand.chunk_id], *cand.order_key),
+        key=lambda cand: (best[cand.chunk_id][0], *cand.order_key),
     )[:limit]
     return tuple(
-        cand.with_ranks(Ranks(semantic=rank)) for rank, cand in enumerate(ordered, start=1)
+        replace(cand, ranks=Ranks(semantic=rank), section=sections.get(cand.chunk_id))
+        for rank, cand in enumerate(ordered, start=1)
     )

@@ -1,4 +1,5 @@
 import json
+import re
 import sqlite3
 import time
 from array import array
@@ -8,6 +9,9 @@ from datetime import timedelta
 from pathlib import Path
 
 _BATCH = 400
+PART_SEP = "#"
+WHOLE = -1
+_PART_SUFFIX = re.compile(r"#(\d+):(\d+):(\d+)")
 SQLITE_BUSY_S = 30.0
 
 _SCHEMA = """
@@ -65,6 +69,41 @@ def cached_or_compute[K: Hashable, V](
 def _batches(items: Sequence[str]) -> Iterable[Sequence[str]]:
     for start in range(0, len(items), _BATCH):
         yield items[start : start + _BATCH]
+
+
+_BASE_HASH = f"substr(content_hash, 1, instr(content_hash || '{PART_SEP}', '{PART_SEP}') - 1)"
+
+
+_KEY_PARTS = (
+    "space=? AND model_id=? AND dim=?"
+    " AND (content_hash = ? OR (content_hash > ? AND content_hash < ?))"
+)
+
+
+def _key_parts(key: str, space: str, model_id: str, dim: int) -> tuple[str | int, ...]:
+    return (space, model_id, dim, key, key + PART_SEP, key + chr(ord(PART_SEP) + 1))
+
+
+def _floats(blob: bytes) -> tuple[float, ...]:
+    values = array("f")
+    values.frombytes(blob)
+    return tuple(values)
+
+
+def _parts(
+    key: str, rows: Sequence[tuple[str, bytes]]
+) -> tuple[tuple[int, int, tuple[float, ...]], ...]:
+    whole = [blob for content_hash, blob in rows if content_hash == key]
+    if whole:
+        return ((0, WHOLE, _floats(whole[0])),)
+    indexed: dict[int, tuple[int, int, tuple[float, ...]]] = {}
+    for content_hash, blob in rows:
+        match = _PART_SUFFIX.fullmatch(content_hash, len(key))
+        if match:
+            indexed[int(match[1])] = (int(match[2]), int(match[3]), _floats(blob))
+    if sorted(indexed) != list(range(len(indexed))):
+        return ()
+    return tuple(indexed[index] for index in range(len(indexed)))
 
 
 class DerivedCache:
@@ -138,9 +177,7 @@ class DerivedCache:
                 params,
             ).fetchall()
             for content_hash, blob in rows:
-                values = array("f")
-                values.frombytes(blob)
-                found[content_hash] = tuple(values)
+                found[content_hash] = _floats(blob)
             self._db.execute(
                 f"UPDATE derived_vectors SET last_used=? WHERE space=? AND model_id=? AND dim=?"
                 f" AND content_hash IN ({marks})",
@@ -172,6 +209,47 @@ class DerivedCache:
         )
         self._db.commit()
 
+    def get_parts(
+        self, keys: Sequence[str], space: str, model_id: str, dim: int
+    ) -> dict[str, tuple[tuple[int, int, tuple[float, ...]], ...]]:
+        """Return (start, end, vector) parts per key: one part ending at WHOLE, or every stored section."""
+        found: dict[str, tuple[tuple[int, int, tuple[float, ...]], ...]] = {}
+        now = self._clock()
+        for key in dict.fromkeys(keys):
+            params = _key_parts(key, space, model_id, dim)
+            rows: list[tuple[str, bytes]] = self._db.execute(
+                f"SELECT content_hash, vector FROM derived_vectors WHERE {_KEY_PARTS}", params
+            ).fetchall()
+            parts = _parts(key, rows)
+            if parts:
+                found[key] = parts
+                self._db.execute(
+                    f"UPDATE derived_vectors SET last_used=? WHERE {_KEY_PARTS}", (now, *params)
+                )
+        self._db.commit()
+        return found
+
+    def put_parts(
+        self,
+        parts: Mapping[str, Sequence[tuple[int, int, Sequence[float]]]],
+        space: str,
+        model_id: str,
+        dim: int,
+    ) -> None:
+        """Replace every stored part of each key; a lone part is stored under the bare key."""
+        rows: dict[str, Sequence[float]] = {}
+        for key, sections in parts.items():
+            self._db.execute(
+                f"DELETE FROM derived_vectors WHERE {_KEY_PARTS}",
+                _key_parts(key, space, model_id, dim),
+            )
+            if len(sections) == 1:
+                rows[key] = sections[0][2]
+                continue
+            for index, (start, end, vector) in enumerate(sections):
+                rows[f"{key}{PART_SEP}{index}:{start}:{end}"] = vector
+        self.put_vectors(rows, space, model_id, dim)
+
     def gc(
         self,
         registered_hashes: Callable[[], Iterable[str]],
@@ -187,7 +265,7 @@ class DerivedCache:
         counts: list[int] = []
         for table in ("derived_annotations", "derived_vectors"):
             cursor = self._db.execute(
-                f"DELETE FROM {table} WHERE content_hash NOT IN (SELECT h FROM live_hashes)"
+                f"DELETE FROM {table} WHERE {_BASE_HASH} NOT IN (SELECT h FROM live_hashes)"
                 " OR (? IS NOT NULL AND last_used < ?)",
                 (cutoff, cutoff),
             )

@@ -1,21 +1,24 @@
 import hashlib
+import math
 from collections import deque
 from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from contextweave.core.config import Config, EmbedConfig
 from contextweave.core.errors import DegradedEntry
 from contextweave.index.chunk_tokens import ChunkTokenizer, default_tokenizer
-from contextweave.index.derived import DerivedCache
+from contextweave.index.derived import WHOLE, DerivedCache
 from contextweave.index.store import Store
 from contextweave.index.vectors import (
     ANNOT,
     CODE,
     KINDS,
+    MAX_PARTS,
     Space,
     SpaceKind,
     VectorInput,
+    VectorPart,
     ensure_space,
     find_space,
     mark_live,
@@ -32,6 +35,7 @@ STAGE = "embed"
 DEFAULT_BATCH = 16
 DEFAULT_MAX_INPUT_TOKENS = 8192
 WRITE_ROWS = 256
+OVERSIZE = "#parts"
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,14 +69,59 @@ def truncate_to_tokens(text: str, tokenizer: ChunkTokenizer, limit: int) -> str:
     return text[:low]
 
 
-def embed_fitting(client: EmbedClient, texts: Sequence[str], kind: EmbedKind) -> list[list[float]]:
-    """Embed texts; on a context overflow retry one by one, re-cutting by the server's count."""
+def split_spans(
+    text: str, tokenizer: ChunkTokenizer, limit: int, max_parts: int = MAX_PARTS
+) -> list[tuple[int, int]]:
+    """Consecutive (start, end) spans of text of at most limit tokens each; text past max_parts drops."""
+    spans: list[tuple[int, int]] = []
+    start = 0
+    while start < len(text) and len(spans) < max_parts:
+        window = truncate_to_tokens(text[start:], tokenizer, limit) or text[start : start + 1]
+        spans.append((start, start + len(window)))
+        start += len(window)
+    return spans or [(0, len(text))]
+
+
+def _shifted(parts: Iterable[VectorPart], offset: int) -> list[VectorPart]:
+    return [VectorPart(offset + part.start, offset + part.end, part.vector) for part in parts]
+
+
+def embed_fitting(
+    client: EmbedClient, texts: Sequence[str], kind: EmbedKind
+) -> list[list[VectorPart]]:
+    """Embed texts as parts; on a context overflow retry one by one, splitting an overlong text."""
     try:
-        return client.embed(texts, kind=kind)
+        vectors = client.embed(texts, kind=kind)
     except ModelContextError as exc:
-        if len(texts) == 1:
-            return client.embed([texts[0][: int(len(texts[0]) * exc.fit_ratio())]], kind=kind)
-    return [vector for text in texts for vector in embed_fitting(client, [text], kind)]
+        if len(texts) > 1:
+            return [parts for text in texts for parts in embed_fitting(client, [text], kind)]
+        text = texts[0]
+        if len(text) < 2:
+            raise
+        size = math.ceil(len(text) / max(2, math.ceil(1 / exc.fit_ratio())))
+        return [
+            [
+                part
+                for start in range(0, len(text), size)
+                for parts in embed_fitting(client, [text[start : start + size]], kind)
+                for part in _shifted(parts, start)
+            ]
+        ]
+    return [
+        [VectorPart(0, len(text), vector)] for text, vector in zip(texts, vectors, strict=False)
+    ]
+
+
+def oversize(
+    inputs: Sequence[VectorInput], tokenizer: ChunkTokenizer, budget: int
+) -> tuple[VectorInput, ...]:
+    """Inputs over budget rekeyed, so vectors truncated from them before parts existed recompute."""
+    return tuple(
+        replace(item, key=item.key + OVERSIZE)
+        if len(item.text) > budget and tokenizer.count(item.text) > budget
+        else item
+        for item in inputs
+    )
 
 
 def code_inputs(store: Store) -> tuple[VectorInput, ...]:
@@ -129,9 +178,12 @@ class _Spec:
     dim: int
 
 
+type Parts = tuple[VectorPart, ...]
+
+
 @dataclass(frozen=True, slots=True)
 class _Computed:
-    vectors: dict[str, Sequence[float]] = field(default_factory=dict[str, Sequence[float]])
+    parts: dict[str, Parts] = field(default_factory=dict[str, Parts])
     degraded: DegradedEntry | None = None
 
 
@@ -143,25 +195,36 @@ def _compute(
     tokenizer: ChunkTokenizer,
     budget: int,
 ) -> _Computed:
-    inputs = [truncate_to_tokens(text, tokenizer, budget) for text in texts]
+    spans = [split_spans(text, tokenizer, budget) for text in texts]
+    flat = [
+        text[start:end] for text, group in zip(texts, spans, strict=True) for start, end in group
+    ]
     outcome = slots.call(
         Slot.EMBED,
-        lambda: embed_fitting(slots.clients.embed, inputs, EmbedKind.DOC),
+        lambda: embed_fitting(slots.clients.embed, flat, EmbedKind.DOC),
         stage=STAGE,
         budget=slots.embed_budget(EmbedKind.DOC),
     )
     if isinstance(outcome, Skipped):
         return _Computed(degraded=outcome.degraded)
-    vectors = outcome.value
-    if len(vectors) != len(keys) or any(len(vector) != spec.dim for vector in vectors):
+    embedded = outcome.value
+    if len(embedded) != len(flat) or any(
+        not parts or any(len(part.vector) != spec.dim for part in parts) for parts in embedded
+    ):
         return _Computed(degraded=DegradedEntry(stage=STAGE, reason="embed_bad_vectors"))
-    return _Computed(dict(zip(keys, vectors, strict=True)))
+    cursor = iter(embedded)
+    computed: dict[str, Parts] = {}
+    for key, group in zip(keys, spans, strict=True):
+        computed[key] = tuple(part for start, _ in group for part in _shifted(next(cursor), start))[
+            :MAX_PARTS
+        ]
+    return _Computed(computed)
 
 
 @dataclass(frozen=True, slots=True)
 class _Flight:
     batch: Sequence[VectorInput]
-    found: Mapping[str, Sequence[float]]
+    found: Mapping[str, Parts]
     future: Future[_Computed] | None
 
 
@@ -172,11 +235,9 @@ class _Sink:
     store: Store
     spec: _Spec
     space: Space | None
-    rows: list[tuple[VectorInput, Sequence[float]]] = field(
-        default_factory=list[tuple[VectorInput, Sequence[float]]]
-    )
+    rows: list[tuple[VectorInput, Parts]] = field(default_factory=list[tuple[VectorInput, Parts]])
 
-    def add(self, rows: Iterable[tuple[VectorInput, Sequence[float]]]) -> None:
+    def add(self, rows: Iterable[tuple[VectorInput, Parts]]) -> None:
         self.rows.extend(rows)
         if len(self.rows) >= WRITE_ROWS:
             self.flush()
@@ -197,12 +258,32 @@ def _settle(flight: _Flight, sink: _Sink, cache: DerivedCache, tally: _Tally) ->
     computed = flight.future.result() if flight.future is not None else _Computed()
     if computed.degraded is not None:
         tally.degraded.append(computed.degraded)
-    elif computed.vectors:
+    elif computed.parts:
         spec = sink.spec
-        cache.put_vectors(computed.vectors, spec.kind, spec.model_id, spec.dim)
-        tally.embedded += len(computed.vectors)
-        merged.update(computed.vectors)
+        cache.put_parts(
+            {
+                key: [(part.start, part.end, part.vector) for part in parts]
+                for key, parts in computed.parts.items()
+            },
+            spec.kind,
+            spec.model_id,
+            spec.dim,
+        )
+        tally.embedded += len(computed.parts)
+        merged.update(computed.parts)
     sink.add((item, merged[item.key]) for item in flight.batch if item.key in merged)
+
+
+def _cached(cache: DerivedCache, batch: Sequence[VectorInput], spec: _Spec) -> dict[str, Parts]:
+    texts = {item.key: item.text for item in batch}
+    found = cache.get_parts(list(texts), spec.kind, spec.model_id, spec.dim)
+    return {
+        key: tuple(
+            VectorPart(start, len(texts[key]) if end == WHOLE else end, vector)
+            for start, end, vector in parts
+        )
+        for key, parts in found.items()
+    }
 
 
 def _embed_work(
@@ -222,7 +303,7 @@ def _embed_work(
                 break
             batch = work[start : start + pace.batch_size]
             keys = [item.key for item in batch]
-            found = cache.get_vectors(keys, spec.kind, spec.model_id, spec.dim)
+            found = _cached(cache, batch, spec)
             tally.cached += len(found)
             missing = [key for key in dict.fromkeys(keys) if key not in found]
             texts = {item.key: item.text for item in batch}
@@ -287,7 +368,7 @@ def embed_project(
     remaining = 0
     live: list[str] = []
     for kind in KINDS:
-        inputs = _inputs(store, config, kind)
+        inputs = oversize(_inputs(store, config, kind), counter, pace.budget)
         space = find_space(store, kind, model_id, embed_config.dim)
         if kind == ANNOT and not inputs and space is None:
             continue
