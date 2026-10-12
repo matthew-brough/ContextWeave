@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from contextweave.core.paths import user_state_dir
 from contextweave.core.refs import project_key
 from contextweave.index.projects import ProjectRegistry
 from contextweave.index.root import ensure_self_ignore
@@ -155,5 +156,59 @@ def test_writes_confined(
     registry.touch(entry.key)
     registry.forget(entry.key)
     changed = before ^ snapshot(tmp_path)
-    assert all(c.startswith(("state", "proj/.contextweave")) for c in changed)
+    assert all(c.startswith(("state", "xdg-state", "proj/.contextweave")) for c in changed)
     assert (root / "a.py").read_text(encoding="utf-8") == "x = 1\n"
+
+
+@pytest.fixture
+def linked_root(tmp_path: Path) -> Path:
+    project = tmp_path / "linked proj"
+    project.mkdir()
+    ensure_self_ignore(project, {"XDG_STATE_HOME": str(tmp_path)})
+    return project
+
+
+@pytest.fixture
+def user_registry(tmp_path: Path, clock: Clock) -> ProjectRegistry:
+    return ProjectRegistry(user_state_dir({"XDG_STATE_HOME": str(tmp_path)}), clock)
+
+
+def test_linked_root_state_links_to_user_state(linked_root: Path, tmp_path: Path) -> None:
+    link = linked_root / ".contextweave"
+    target = tmp_path / "contextweave" / "projects" / project_key(linked_root) / "state"
+    assert link.is_symlink() and link.resolve() == target.resolve()
+    assert (target / ".gitignore").read_text(encoding="utf-8") == "*\n"
+
+
+@pytest.mark.parametrize("keep_memory", [False, True])
+def test_forget_removes_linked_state(
+    user_registry: ProjectRegistry, linked_root: Path, tmp_path: Path, keep_memory: bool
+) -> None:
+    entry = user_registry.register(linked_root)
+    target = tmp_path / "contextweave" / "projects" / entry.key / "state"
+    result = user_registry.forget(entry.key, keep_memory=keep_memory)
+    assert result is not None and result.removed_root_state
+    assert not (linked_root / ".contextweave").is_symlink()
+    assert not target.exists()
+
+
+def test_forget_missing_removes_linked_state(
+    user_registry: ProjectRegistry, linked_root: Path, tmp_path: Path
+) -> None:
+    entry = user_registry.register(linked_root)
+    (linked_root / ".contextweave").unlink()
+    linked_root.rmdir()
+    assert [r.key for r in user_registry.forget_missing()] == [entry.key]
+    assert not (tmp_path / "contextweave" / "projects" / entry.key).exists()
+
+
+def test_forget_keeps_foreign_symlinked_state(registry: ProjectRegistry, tmp_path: Path) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    project = tmp_path / "linked"
+    project.mkdir()
+    (project / ".contextweave").symlink_to(elsewhere, target_is_directory=True)
+    entry = registry.register(project)
+    result = registry.forget(entry.key)
+    assert result is not None and not result.removed_root_state
+    assert (project / ".contextweave").is_symlink() and elsewhere.is_dir()

@@ -1,9 +1,15 @@
+import os
+from collections.abc import Mapping
 from pathlib import Path
+
+from contextweave.core.paths import projects_dir
+from contextweave.core.refs import project_key
 
 CONFIG_FILE = ".contextweave.toml"
 STATE_DIR = ".contextweave"
 GIT_MARKER = ".git"
 SELF_IGNORE = "*\n"
+LOCAL_STATE = "state"
 
 
 def discover_root(start: Path) -> Path:
@@ -26,9 +32,21 @@ def state_dir(root: Path) -> Path:
     return root / STATE_DIR
 
 
-def ensure_self_ignore(root: Path) -> Path:
-    """Create the state directory with a gitignore of its own; the user's gitignore is untouched."""
+def local_state(root: Path, env: Mapping[str, str]) -> Path:
+    """Where a root keeps its state; root/.contextweave links here."""
+    return projects_dir(env) / project_key(root) / LOCAL_STATE
+
+
+def ensure_self_ignore(root: Path, env: Mapping[str, str] = os.environ) -> Path:
+    """Create the state directory with a gitignore of its own; the user's gitignore is untouched.
+
+    A new state directory lives under the user state dir; root/.contextweave links to it.
+    """
     directory = state_dir(root)
+    if not directory.exists() and not directory.is_symlink():
+        target = local_state(root, env)
+        target.mkdir(parents=True, exist_ok=True)
+        directory.symlink_to(target, target_is_directory=True)
     directory.mkdir(parents=True, exist_ok=True)
     ignore = directory / ".gitignore"
     if not ignore.is_file() or ignore.read_text(encoding="utf-8") != SELF_IGNORE:
