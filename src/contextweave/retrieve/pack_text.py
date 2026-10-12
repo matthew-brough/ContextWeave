@@ -13,6 +13,8 @@ def item_lines(item: ItemWire) -> list[str]:
     head = [item["kind"]] if item["kind"] else []
     if name := item["qualified_name"]:
         head.append(name)
+    elif item["symbols"]:
+        head.append(f"{{{', '.join(item['symbols'])}}}")
     head.append(f"L{item['start_line']}-{item['end_line']}")
     if item["rep"] != SOURCE_REP:
         head.append(f"[{item['rep']}]")

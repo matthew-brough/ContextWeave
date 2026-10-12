@@ -87,3 +87,18 @@ def test_merge_keeps_union_of_edges(store: Store) -> None:
     right = replace(span(base, 8, 20), edges=(first, second))
     (merged,) = compact_candidates(SourceCache(store.root), (left, right))
     assert merged.edges == (first, second)
+
+
+def test_merged_group_keeps_member_symbols(store: Store) -> None:
+    ingest(store, "m.py", TWO)
+    base = load_file_candidates(store, "m.py")[0]
+    first = replace(span(base, 0, 12), qualified_name="a", symbols=("a",))
+    second = replace(span(base, 8, 20), qualified_name="b", symbols=("b", "a"))
+    out = compact_candidates(SourceCache(store.root), (first, second))
+    assert [(c.kind, c.qualified_name, c.symbols) for c in out] == [("group", None, ("a", "b"))]
+
+
+def test_hydrate_carries_every_chunk_symbol(store: Store) -> None:
+    ingest(store, "m.py", TWO)
+    names = {name for cand in load_file_candidates(store, "m.py") for name in cand.symbols}
+    assert names == {"a", "b"}

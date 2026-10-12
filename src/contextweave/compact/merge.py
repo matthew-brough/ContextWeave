@@ -39,6 +39,7 @@ def combine(run: list[Candidate]) -> Candidate:
         anchor=ByteAnchor(start, end),
         qualified_name=best.qualified_name if same else None,
         kind=best.kind if same else "group",
+        symbols=tuple(dict.fromkeys(name for cand in run for name in cand.symbols)),
         critical=any(cand.critical for cand in run),
         edges=tuple(dict.fromkeys(edge for cand in run for edge in cand.edges)),
         fused=max(cand.fused for cand in run),

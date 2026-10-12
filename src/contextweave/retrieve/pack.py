@@ -66,6 +66,7 @@ class ItemWire(TypedDict):
     end_line: int
     qualified_name: str | None
     kind: str | None
+    symbols: list[str]
     why: str
     scores: ScoresWire
     edges: list[EdgeWire]
@@ -147,6 +148,7 @@ class PackItem:
             end_line=self.end_line,
             qualified_name=cand.qualified_name,
             kind=cand.kind,
+            symbols=list(cand.symbols),
             why=cand.why,
             scores=ScoresWire(
                 final=scores.final,
