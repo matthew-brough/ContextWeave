@@ -179,6 +179,28 @@ class WordCount:
         return len(text.split())
 
 
+def test_parts_leave_room_for_the_server_reserved_token(
+    tmp_path: Path, cache: DerivedCache
+) -> None:
+    fake = FakeEmbed(embed_config())
+    config = config_for(fake.config)
+    body = "\n".join(f"    value_{n} = {n}" for n in range(400))
+    root = project(tmp_path, text=f"def big():\n{body}\n")
+    limit = 50
+    with Store.open(root) as store, store.writer_lock():
+        store.refresh("mod.py")
+        embed_project(
+            store,
+            slots_for(fake, config),
+            cache,
+            config,
+            tokenizer=WordCount(),
+            max_input_tokens=limit,
+        )
+    prefix = WordCount().count(config.models.embed.doc_prefix)
+    assert max(WordCount().count(text) for text in fake.texts) + prefix < limit
+
+
 def test_truncate_to_tokens_keeps_longest_prefix_within_limit() -> None:
     assert truncate_to_tokens("a b c d e", WordCount(), 3).split() == ["a", "b", "c"]
     assert truncate_to_tokens("a b", WordCount(), 3) == "a b"

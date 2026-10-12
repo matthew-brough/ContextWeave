@@ -190,20 +190,23 @@ def test_client_error_is_request_error(models: ModelsConfig) -> None:
     assert not isinstance(caught.value, ModelContextError)
 
 
-def test_context_overflow_carries_server_counts(models: ModelsConfig) -> None:
+@pytest.mark.parametrize(("needed", "ratio"), [(16384, 0.5), (8192, 1.0)])
+def test_context_overflow_carries_server_counts(
+    models: ModelsConfig, needed: int, ratio: float
+) -> None:
     body = {
         "error": {
             "code": 400,
             "type": "exceed_context_size_error",
-            "n_prompt_tokens": 16384,
+            "n_prompt_tokens": needed,
             "n_ctx": 8192,
         }
     }
     rec = recorder(lambda r: httpx.Response(400, json=body))
     with pytest.raises(ModelContextError) as caught:
         LlamaEmbed(ctx_of(models, rec)).embed(["a"], kind=EmbedKind.DOC)
-    assert (caught.value.needed, caught.value.available) == (16384, 8192)
-    assert caught.value.fit_ratio() == pytest.approx(0.5 * 0.85)
+    assert (caught.value.needed, caught.value.available) == (needed, 8192)
+    assert caught.value.fit_ratio() == pytest.approx(ratio * 0.85)
 
 
 def test_error_status_is_transport_error(models: ModelsConfig) -> None:

@@ -33,6 +33,7 @@ from contextweave.models.slots import ModelSlots, Skipped
 STAGE = "embed"
 DEFAULT_BATCH = 16
 DEFAULT_MAX_INPUT_TOKENS = 8192
+SERVER_RESERVED_TOKENS = 1
 WRITE_ROWS = 256
 OVERSIZE = "#parts"
 CALL_PARTS = 4
@@ -380,7 +381,7 @@ def embed_project(
     tally = _Tally()
     pace = _Pace(
         counter,
-        max(max_input_tokens - counter.count(embed_config.doc_prefix), 1),
+        max(max_input_tokens - SERVER_RESERVED_TOKENS - counter.count(embed_config.doc_prefix), 1),
         batch_size,
         max(embed_config.parallel, 1),
     )

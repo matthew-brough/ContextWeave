@@ -80,7 +80,7 @@ def _rejection(path: str, response: httpx.Response) -> ModelRequestError:
         return ModelRequestError(message)
     needed = detail.get("n_prompt_tokens")
     available = detail.get("n_ctx")
-    if isinstance(needed, int) and isinstance(available, int) and needed > available > 0:
+    if isinstance(needed, int) and isinstance(available, int) and needed >= available > 0:
         return ModelContextError(
             f"{message}: {needed} tokens exceed context {available}",
             needed=needed,
