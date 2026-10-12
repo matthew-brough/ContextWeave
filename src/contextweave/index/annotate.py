@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import time
@@ -11,7 +12,7 @@ from contextweave.core.config import Config
 from contextweave.core.errors import DegradedEntry
 from contextweave.core.types import JSON
 from contextweave.index.chunk_tokens import ChunkTokenizer, default_tokenizer
-from contextweave.index.derived import DerivedAnnotation, DerivedCache
+from contextweave.index.derived import PART_SEP, DerivedAnnotation, DerivedCache
 from contextweave.index.embed import truncate_to_tokens
 from contextweave.index.store import Store
 from contextweave.models.errors import ModelContextError, ModelParseError, ModelRequestError
@@ -94,6 +95,25 @@ class _InFlight:
     chunk: PendingChunk
     attempt: _Attempt
     future: Future[Outcome[DerivedAnnotation]]
+
+
+def prompt_cache_version(prompt: PromptTemplate, max_code_tokens: int) -> str:
+    """Cache identity of the prompt: its version plus a digest of messages, schema and code cap."""
+    payload = json.dumps(
+        {
+            "messages": [[message.role, message.content] for message in prompt.messages],
+            "schema": prompt.schema,
+            "max_code_tokens": max_code_tokens,
+        },
+        sort_keys=True,
+    )
+    return f"{prompt.version}@{hashlib.sha256(payload.encode()).hexdigest()[:8]}"
+
+
+def annotation_cache_key(chunk: PendingChunk) -> str:
+    """Cache identity of a chunk's prompt input: its content plus the path, kind and name shown."""
+    shown = "\0".join((chunk.path, chunk.kind, chunk.name))
+    return f"{chunk.content_hash}{PART_SEP}{hashlib.sha256(shown.encode()).hexdigest()[:16]}"
 
 
 def annotation_text(annotation: DerivedAnnotation) -> str:
@@ -267,7 +287,7 @@ def annotate_project(
     except PromptError as exc:
         entry = DegradedEntry(stage=STAGE, reason=f"annotate_prompt: {exc}")
         return AnnotateReport(pending=len(todo), total=total, degraded=(entry,))
-    version = str(annotate.prompt_version)
+    version = prompt_cache_version(prompt, max_code_tokens)
     counter = tokenizer or default_tokenizer()
     tally = _Tally()
     left = len(todo)
@@ -291,7 +311,9 @@ def annotate_project(
             tally.annotated += 1
             if started is not None:
                 tally.model_seconds = clock() - started
-            cache.put_annotation(flight.chunk.content_hash, annotate.model, version, outcome.value)
+            cache.put_annotation(
+                annotation_cache_key(flight.chunk), annotate.model, version, outcome.value
+            )
             record(flight.chunk, outcome.value)
             return True
         if not counting:
@@ -305,7 +327,7 @@ def annotate_project(
     with ThreadPoolExecutor(max(annotate.parallel, 1), thread_name_prefix=STAGE) as pool:
         going = True
         for chunk in todo:
-            found = cache.get_annotation(chunk.content_hash, annotate.model, version)
+            found = cache.get_annotation(annotation_cache_key(chunk), annotate.model, version)
             if found is not None:
                 tally.cached += 1
                 record(chunk, found)

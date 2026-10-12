@@ -8,6 +8,7 @@ from fake_embed import FakeEmbed, embed_config
 
 from contextweave.core.config import Config
 from contextweave.index.annotate import (
+    DEFAULT_MAX_CODE_TOKENS,
     MAX_CONSECUTIVE_FAULTS,
     QUEUE_DEPTH,
     AnnotateProgress,
@@ -112,6 +113,61 @@ def test_cache_hit_across_project_makes_no_call(rig: Rig, tmp_path: Path) -> Non
     assert report.annotate.annotated == 0
     assert report.annotate.cached == chunk_count(clone)
     assert clone.annotate.prompts == []
+
+
+def clone_slice(
+    rig: Rig,
+    tmp_path: Path,
+    *,
+    prompts_dir: Path = PROMPTS_DIR,
+    max_code_tokens: int = DEFAULT_MAX_CODE_TOKENS,
+) -> tuple[int, int]:
+    clone = Rig(tmp_path / "clone")
+    index_project(clone.root, clone.config)
+    with Store.open(clone.root) as store:
+        report = annotate_project(
+            store,
+            clone.slots,
+            rig.cache,
+            clone.config,
+            prompts_dir=prompts_dir,
+            max_code_tokens=max_code_tokens,
+        )
+    return report.annotated, report.cached
+
+
+def test_same_code_at_another_path_is_not_served_from_cache(rig: Rig, tmp_path: Path) -> None:
+    rig.index()
+    moved = Rig(tmp_path / "moved")
+    (moved.root / "mod.py").rename(moved.root / "renamed.py")
+    report = index_project(moved.root, moved.config, slots=moved.slots, cache=rig.cache)
+    assert report.annotate is not None
+    assert report.annotate.cached == chunk_count(moved) - report.annotate.annotated
+    assert report.annotate.annotated > 0
+    assert all("renamed.py" in prompt for prompt in moved.annotate.prompts)
+
+
+def test_prompt_text_edit_at_same_version_misses_cache(rig: Rig, tmp_path: Path) -> None:
+    rig.index()
+    prompts = tmp_path / "prompts"
+    prompts.mkdir()
+    text = (PROMPTS_DIR / "annotate.toml").read_text(encoding="utf-8")
+    (prompts / "annotate.toml").write_text(
+        text.replace("Reply with JSON only.", "Reply with strict JSON only.")
+    )
+    assert clone_slice(rig, tmp_path, prompts_dir=prompts) == (chunk_count(rig), 0)
+
+
+def test_code_cap_change_misses_cache(rig: Rig, tmp_path: Path) -> None:
+    rig.index()
+    assert clone_slice(rig, tmp_path, max_code_tokens=100) == (chunk_count(rig), 0)
+
+
+def test_cache_gc_keeps_annotations_of_live_chunks(rig: Rig) -> None:
+    rig.index()
+    with Store.open(rig.root, readonly=True) as store:
+        hashes = [str(row[0]) for row in store.query("SELECT content_hash FROM chunks")]
+    assert rig.cache.gc(lambda: hashes).annotations == 0
 
 
 def test_prompt_version_bump_reannotates_everything(rig: Rig, tmp_path: Path) -> None:
