@@ -89,6 +89,7 @@ def full_index(root: Path, config: Config, env: Mapping[str, str]) -> IndexRepor
             cache=models.cache,
             env=env,
             on_progress=printer,
+            bulk=True,
         )
     finally:
         printer.close()

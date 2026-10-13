@@ -6,6 +6,7 @@ from contextweave.agents.catalog import DEFAULT_AGENT, NO_AGENT
 from contextweave.agents.cli_entry import CommandResult, run_hook, run_init, run_uninstall
 from contextweave.cli_commands.common import CommandContext, SubparserRegistry, complain, say
 from contextweave.cli_commands.indexing import full_index
+from contextweave.cli_commands.models_cmd import fetch_weights
 from contextweave.core.config import Config
 from contextweave.index.indexer import IndexReport
 from contextweave.index.root import discover_root
@@ -52,6 +53,7 @@ def run_init_command(args: argparse.Namespace, ctx: CommandContext) -> int:
     dry_run: bool = args.dry_run
 
     def indexer(root: Path, config: Config) -> IndexReport:
+        fetch_weights(config.models, ctx.env)
         return full_index(root, config, ctx.env)
 
     result = run_init(

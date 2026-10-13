@@ -21,8 +21,8 @@ capped near 23 GB.
 3. Classify: a checkout of the Kev fork with weight-only quantisation,
    [matthew-brough/kev `feat/weight-quantization`](https://github.com/matthew-brough/kev/tree/feat/weight-quantization),
    synced with `uv sync`. Its `kev.serve` speaks `/v1/systemone`.
-4. Models, fetched by you. `-hf <repo>:<quant>` downloads on first start; that
-   is your call, never the daemon's. Check each model page for the exact name.
+4. Models, fetched by you or by `cw models fetch` from `models.<slot>.weights`.
+   A supervised start never downloads. Check each model page for the exact name.
 5. Close other GPU users (browsers, games) so the VRAM reading is the server
    under test alone.
 
@@ -75,8 +75,11 @@ Two ways to run them:
   gpu = { endpoint = "http://127.0.0.1:8770", launch = "llama-server -m /models/jina-code-embeddings-1.5b-Q8_0.gguf --embeddings --pooling last -ngl 99 --port 8770" }
   ```
 
-  Use a local `-m <path.gguf>` instead of `-hf` once the file is downloaded,
-  so a supervised start never fetches anything.
+  Use a local `-m <path.gguf>` (or `-m {weights}` with `models.embed.weights`
+  set, fetched by `cw init` / `cw models fetch`) instead of `-hf`, so a
+  supervised start never fetches anything. A launched server that exits or does
+  not answer within 300 s marks the device down with its last stderr lines as
+  the reason, shown by `cw status`.
 
 ## Running
 

@@ -123,6 +123,7 @@ class EmbedConfig:
     batch_deadline_ms: int = 300000
     parallel: int = 4
     devices: tuple[str, ...] = ("gpu", "cpu")
+    weights: tuple[str, ...] = ()
     gpu: DeviceEndpointConfig = field(default_factory=_local(8770))
     cpu: DeviceEndpointConfig = field(default_factory=_local(8771))
 
@@ -138,6 +139,7 @@ class AnnotateConfig:
     parallel: int = 4
     max_output_tokens: int = 512
     devices: tuple[str, ...] = ("gpu", "cpu")
+    weights: tuple[str, ...] = ()
     gpu: DeviceEndpointConfig = field(default_factory=_local(8772))
     cpu: DeviceEndpointConfig = field(default_factory=_local(8773))
 
@@ -150,6 +152,7 @@ class ClassifyConfig:
     question_set_version: int = 2
     build_id: str = "kev-0.8b-int8"
     parallel: int = 8
+    weights: tuple[str, ...] = ()
     gpu: DeviceEndpointConfig = field(default_factory=_local(8765))
     cpu: DeviceEndpointConfig = field(default_factory=_local(8766))
 
@@ -161,6 +164,7 @@ class ModelsConfig:
     retry_after_s: int = 60
     skip_warn: float = 0.05
     slow_warn: float = 0.25
+    weights_dir: str = ""
     embed: EmbedConfig = field(default_factory=EmbedConfig)
     annotate: AnnotateConfig = field(default_factory=AnnotateConfig)
     classify: ClassifyConfig = field(default_factory=ClassifyConfig)

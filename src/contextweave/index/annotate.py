@@ -2,8 +2,8 @@ import hashlib
 import json
 import re
 import time
-from collections import deque
-from collections.abc import Callable, Mapping
+from collections import Counter, deque
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -393,5 +393,14 @@ def annotate_lines(report: AnnotateReport) -> list[str]:
     lines = [line]
     if report.pending:
         lines.append("rerun `cw index` to finish annotating")
-    lines.extend(f"degraded {entry['stage']}: {entry['reason']}" for entry in report.degraded)
+    lines.extend(degraded_lines(report.degraded))
     return lines
+
+
+def degraded_lines(entries: Sequence[DegradedEntry]) -> list[str]:
+    """One line per distinct degraded stage and reason, with a repeat count."""
+    counts = Counter((entry["stage"], entry["reason"]) for entry in entries)
+    return [
+        f"degraded {stage}: {reason}{f' (x{count})' if count > 1 else ''}"
+        for (stage, reason), count in counts.items()
+    ]

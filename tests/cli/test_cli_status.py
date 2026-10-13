@@ -4,6 +4,8 @@ from pathlib import Path
 import pytest
 from cli_support import cw
 
+from contextweave.core.types import JSON
+
 
 def test_status_text(
     initialised: Path, env: dict[str, str], capsys: pytest.CaptureFixture[str]
@@ -40,3 +42,28 @@ def test_status_unbuilt_index(
 
     ProjectRegistry(user_state_dir(env)).register(root)
     assert "not built" in cw(capsys, env, root, "status").out
+
+
+def test_status_text_shows_why_a_slot_has_no_device() -> None:
+    from contextweave.cli_commands.status import StatusReport, text_lines
+
+    daemon: dict[str, JSON] = {
+        "pid": 1,
+        "uptime_s": 1.0,
+        "queue": 0,
+        "models": [
+            {
+                "slot": "embed",
+                "active": None,
+                "skip_rate": 1.0,
+                "slow_rate": 0.0,
+                "calls_in_window": 3,
+                "reason": "no device ready, last start failed: set models.embed.gpu.launch",
+            },
+            {"slot": "annotate", "active": "cpu", "reason": None},
+        ],
+    }
+    lines = text_lines(StatusReport(None, "none", daemon))
+    hint = lines.index("    no device ready, last start failed: set models.embed.gpu.launch")
+    assert lines[hint - 1].startswith("  model embed: device None")
+    assert sum(line.startswith("    ") for line in lines) == 1

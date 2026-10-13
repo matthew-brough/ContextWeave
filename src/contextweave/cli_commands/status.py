@@ -163,6 +163,9 @@ def _slot_lines(daemon: dict[str, JSON]) -> list[str]:
                 f"{slot.get('skip_rate')}, slow rate {slot.get('slow_rate')}"
                 f" over {slot.get('calls_in_window')} calls{flag}{slow}"
             )
+            reason = slot.get("reason")
+            if isinstance(reason, str) and reason:
+                lines.append(f"    {reason}")
     return lines
 
 

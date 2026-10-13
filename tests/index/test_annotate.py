@@ -406,3 +406,37 @@ def test_rejected_chunks_are_skipped_and_pass_continues(rig: Rig) -> None:
     chunks = chunk_count(rig)
     assert (annotated, cached, pending) == (0, 0, chunks)
     assert len(rig.annotate.prompts) == 2 * chunks
+
+
+def test_degraded_lines_collapse_repeats() -> None:
+    from contextweave.core.errors import DegradedEntry
+    from contextweave.index.annotate import degraded_lines
+
+    entries = [
+        DegradedEntry(stage="embed", reason="no device ready"),
+        DegradedEntry(stage="embed", reason="no device ready"),
+        DegradedEntry(stage="embed", reason="device warming up"),
+    ]
+    assert degraded_lines(entries) == [
+        "degraded embed: no device ready (x2)",
+        "degraded embed: device warming up",
+    ]
+
+
+def test_bulk_index_stages_annotate_then_embed(tmp_path: Path) -> None:
+    from contextweave.models.residency import Profile
+
+    rig = Rig(tmp_path)
+    slots = rig.slots
+    seen: list[Profile] = []
+    applied = slots.residency.apply
+
+    def track(profile: Profile) -> None:
+        seen.append(profile)
+        applied(profile)
+
+    slots.residency.apply = track
+    report = index_project(rig.root, rig.config, slots=slots, cache=rig.cache, bulk=True)
+    assert seen == [Profile.BULK_ANNOTATE, Profile.BULK_EMBED]
+    assert report.annotate is not None and report.annotate.annotated > 0
+    assert report.embed is not None and report.embed.embedded > 0

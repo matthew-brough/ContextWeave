@@ -1,4 +1,5 @@
 import dataclasses
+import time
 from collections.abc import Callable, Sequence
 from typing import cast
 
@@ -17,7 +18,13 @@ from contextweave.models.device_http import device_table
 from contextweave.models.errors import ModelDeadlineError, ModelRequestError, ModelTransportError
 from contextweave.models.health import SlotHealth
 from contextweave.models.providers import Device, EmbedKind, ProviderRegistries, Slot
-from contextweave.models.residency import Probe, Profile, ServerBackend, http_probe
+from contextweave.models.residency import (
+    Probe,
+    Profile,
+    ServerBackend,
+    SubprocessLauncher,
+    http_probe,
+)
 from contextweave.models.slots import Done, ModelSlots, Skipped, default_registries
 
 VECTOR = {"data": [{"index": 0, "embedding": [1.0, 0.0, 0.0]}]}
@@ -50,12 +57,20 @@ class FakeHandle:
     def __init__(self, command: str) -> None:
         self.command = command
         self.running = True
+        self.code: int | None = None
+        self.stderr = ""
 
     def alive(self) -> bool:
         return self.running
 
     def stop(self) -> None:
         self.running = False
+
+    def exit_code(self) -> int | None:
+        return self.code
+
+    def tail(self) -> str:
+        return self.stderr
 
 
 class FakeLauncher:
@@ -478,3 +493,105 @@ def test_http_probe_falls_back_to_models_route(routes: dict[str, int], alive: bo
         return httpx.Response(routes.get(request.url.path, 404))
 
     assert http_probe(httpx.MockTransport(handle))("http://kev/") is alive
+
+
+class CrashingLauncher(FakeLauncher):
+    def start(self, command: str) -> FakeHandle:
+        handle = super().start(command)
+        handle.running = False
+        handle.code = 1
+        handle.stderr = "loading model\nerror: failed to open weights.gguf"
+        return handle
+
+
+def launched(config: DeviceEndpointConfig) -> DeviceEndpointConfig:
+    return dataclasses.replace(config, launch="llama-server --port 8770")
+
+
+def test_launched_server_that_exits_fails_fast_with_its_stderr(
+    models: ModelsConfig, clock: Clock
+) -> None:
+    sleeps: list[float] = []
+    backend = ServerBackend(
+        Slot.EMBED,
+        device_table(launched(models.embed.gpu), models.embed.cpu),
+        CrashingLauncher(),
+        lambda endpoint: False,
+        clock=clock,
+        sleep=sleeps.append,
+    )
+    with pytest.raises(ModelTransportError, match=r"exited with code 1.*failed to open weights"):
+        backend.warm(Device.GPU)
+    assert sleeps == []
+
+
+def test_external_endpoint_failure_names_the_launch_key(models: ModelsConfig, clock: Clock) -> None:
+    backend = ServerBackend(
+        Slot.EMBED,
+        device_table(models.embed.gpu, models.embed.cpu),
+        FakeLauncher(),
+        lambda endpoint: False,
+        clock=clock,
+    )
+    with pytest.raises(ModelTransportError, match=r"set models\.embed\.gpu\.launch"):
+        backend.warm(Device.GPU)
+
+
+def test_launch_expands_before_start(models: ModelsConfig, clock: Clock) -> None:
+    launcher = FakeLauncher()
+    backend = ServerBackend(
+        Slot.EMBED,
+        device_table(launched(models.embed.gpu), models.embed.cpu),
+        launcher,
+        lambda endpoint: True,
+        clock=clock,
+        expand=lambda command: f"{command} -m /w.gguf",
+    )
+    backend.warm(Device.GPU)
+    assert launcher.started[0].command == "llama-server --port 8770 -m /w.gguf"
+
+
+def test_start_failure_shows_in_status_reason(models: ModelsConfig, clock: Clock) -> None:
+    config = dataclasses.replace(
+        models,
+        embed=dataclasses.replace(models.embed, gpu=launched(models.embed.gpu), devices=("gpu",)),
+    )
+    slots = ModelSlots.from_config(
+        config,
+        transport=transport_of(recorder(good)),
+        clock=clock,
+        submit=lambda job: job(),
+        launcher=CrashingLauncher(),
+        probe=lambda endpoint: False,
+    )
+    result = embed(slots)
+    assert isinstance(result, Skipped)
+    status = slots.healths[Slot.EMBED].status()
+    assert status.active is None
+    assert status.reason is not None and "failed to open weights" in status.reason
+    assert "failed to open weights" in embed_reason(slots)
+
+
+def embed_reason(slots: ModelSlots) -> str:
+    result = embed(slots)
+    assert isinstance(result, Skipped)
+    return result.degraded["reason"]
+
+
+def test_subprocess_launcher_keeps_stderr_tail(models: ModelsConfig, clock: Clock) -> None:
+    gpu = dataclasses.replace(models.embed.gpu, launch="sh -c 'echo boom >&2; exit 3'")
+    backend = ServerBackend(
+        Slot.EMBED,
+        device_table(gpu, models.embed.cpu),
+        SubprocessLauncher(),
+        lambda endpoint: False,
+        sleep=lambda seconds: time.sleep(0.05),
+        startup_timeout_s=10,
+    )
+    with pytest.raises(ModelTransportError, match="code 3: boom"):
+        backend.warm(Device.GPU)
+
+
+def test_subprocess_launcher_reports_missing_binary() -> None:
+    with pytest.raises(ModelTransportError, match="cannot launch"):
+        SubprocessLauncher().start("/nonexistent/llama-server --port 1")

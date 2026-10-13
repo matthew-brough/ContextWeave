@@ -34,7 +34,7 @@ class ModelRuntime:
 
     @classmethod
     def create(cls, config: Config, env: Mapping[str, str]) -> ModelRuntime:
-        slots = ModelSlots.from_config(config.models)
+        slots = ModelSlots.from_config(config.models, env=env)
         cache = DerivedCache(derived_db_path(env))
         tokenizer = embed_tokenizer(config.models.embed.model, env)
         return cls(slots, cache, config, tokenizer)

@@ -1,11 +1,13 @@
 import shlex
 import subprocess
+import threading
 import time
+from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from http import HTTPStatus
-from typing import Protocol
+from typing import IO, Protocol
 
 import httpx
 
@@ -21,6 +23,9 @@ type Sleep = Callable[[float], None]
 STOP_GRACE_S = 5.0
 POLL_INTERVAL_S = 0.5
 PROBE_TIMEOUT_S = 5.0
+TAIL_LINES = 12
+TAIL_SHOWN = 3
+READER_JOIN_S = 1.0
 
 
 class Profile(StrEnum):
@@ -34,19 +39,44 @@ class ProcessHandle(Protocol):
 
     def stop(self) -> None: ...
 
+    def exit_code(self) -> int | None: ...
+
+    def tail(self) -> str: ...
+
 
 class ProcessLauncher(Protocol):
     def start(self, command: str) -> ProcessHandle: ...
 
 
 class SubprocessHandle:
-    """A supervised child process."""
+    """A supervised child process; keeps the last stderr lines so a failed start can say why."""
 
     def __init__(self, process: subprocess.Popen[bytes]) -> None:
         self._process = process
+        self._tail: deque[str] = deque(maxlen=TAIL_LINES)
+        self._reader: threading.Thread | None = None
+        if process.stderr is not None:
+            self._reader = threading.Thread(
+                target=self._drain, args=(process.stderr,), name="cw-server-stderr", daemon=True
+            )
+            self._reader.start()
+
+    def _drain(self, stream: IO[bytes]) -> None:
+        for line in stream:
+            text = line.decode(errors="replace").rstrip()
+            if text:
+                self._tail.append(text)
 
     def alive(self) -> bool:
         return self._process.poll() is None
+
+    def exit_code(self) -> int | None:
+        return self._process.poll()
+
+    def tail(self) -> str:
+        if self._reader is not None and not self.alive():
+            self._reader.join(READER_JOIN_S)
+        return "\n".join(self._tail)
 
     def stop(self) -> None:
         if not self.alive():
@@ -63,13 +93,16 @@ class SubprocessLauncher:
     """Starts launch commands as detached subprocesses."""
 
     def start(self, command: str) -> ProcessHandle:
-        process = subprocess.Popen(
-            shlex.split(command),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        try:
+            process = subprocess.Popen(
+                shlex.split(command),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
+        except (OSError, ValueError) as exc:
+            raise ModelTransportError(f"cannot launch `{command}`: {exc}") from exc
         return SubprocessHandle(process)
 
 
@@ -107,8 +140,10 @@ class ServerBackend:
         clock: Clock = time.monotonic,
         sleep: Sleep = time.sleep,
         startup_timeout_s: float = 300.0,
+        expand: Callable[[str], str] = lambda command: command,
     ) -> None:
         self._slot = slot
+        self._expand = expand
         self._servers = servers
         self._launcher = launcher
         self._probe = probe
@@ -129,23 +164,49 @@ class ServerBackend:
             raise ProviderSlotError(f"{self._slot} has no server for device '{device}'")
         handle = self._handles.get(device)
         if server.launch and (handle is None or not handle.alive()):
-            self._handles[device] = self._launcher.start(server.launch)
+            handle = self._launcher.start(self._expand(server.launch))
+            self._handles[device] = handle
         deadline = self._clock() + (self._startup_timeout_s if server.launch else 0.0)
         while not self._probe(server.endpoint):
+            if handle is not None and not handle.alive():
+                self._handles.pop(device, None)
+                raise ModelTransportError(
+                    _with_tail(
+                        f"{self._slot} {device} server exited with code {handle.exit_code()}",
+                        handle,
+                    ),
+                    device_tried=str(device),
+                )
             if self._clock() >= deadline:
                 raise ModelTransportError(
-                    f"{self._slot} {device} endpoint {server.endpoint} not answering",
-                    device_tried=str(device),
+                    self._not_answering(device, server, handle), device_tried=str(device)
                 )
             self._sleep(POLL_INTERVAL_S)
         for other in [other for other in self._handles if other is not device]:
             self._handles.pop(other).stop()
+
+    def _not_answering(
+        self, device: Device, server: DeviceEndpointConfig, handle: ProcessHandle | None
+    ) -> str:
+        message = f"{self._slot} {device} endpoint {server.endpoint} not answering"
+        if not server.launch:
+            return (
+                f"{message}; start the server yourself or set "
+                f"models.{self._slot}.{device}.launch so the daemon starts it"
+            )
+        message = f"{message} {self._startup_timeout_s:.0f}s after launch"
+        return _with_tail(message, handle) if handle is not None else message
 
     def stop_all(self) -> None:
         """Stop every supervised process; external endpoints are left alone."""
         for handle in self._handles.values():
             handle.stop()
         self._handles.clear()
+
+
+def _with_tail(message: str, handle: ProcessHandle) -> str:
+    lines = handle.tail().splitlines()[-TAIL_SHOWN:]
+    return f"{message}: {' | '.join(lines)}" if lines else message
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,16 +1,18 @@
 import argparse
+from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
 
 from contextweave.cli_commands.common import (
     EXIT_FAILED,
+    EXIT_OK,
     EXIT_USAGE,
     CommandContext,
     SubparserRegistry,
     complain,
     say,
 )
-from contextweave.core.config import ConfigError, load_config
+from contextweave.core.config import ConfigError, ModelsConfig, load_config
 from contextweave.index.root import discover_root
 from contextweave.models.probe.context import (
     ALL_DEVICES,
@@ -24,6 +26,7 @@ from contextweave.models.probe.context import (
 from contextweave.models.probe.render import render_json, render_record, render_table
 from contextweave.models.probe.runner import run_probe
 from contextweave.models.providers import Device, Slot
+from contextweave.models.weights import ensure_weights
 
 DEFAULTS = ProbeOptions()
 CANDIDATE_KEYS = ("family", "rung", "build", "model", "gpu", "cpu")
@@ -36,6 +39,7 @@ class CandidateSpecError(ValueError):
 def add_parser(commands: SubparserRegistry) -> None:
     parser = commands.add_parser("models", help="Model slot tooling")
     actions = parser.add_subparsers(dest="models_command", required=True)
+    actions.add_parser("fetch", help="Download configured model weights that are missing")
     probe = actions.add_parser("probe", help="Time each model slot on this hardware, no downloads")
     probe.add_argument("--slot", action="append", choices=[slot.value for slot in ALL_SLOTS])
     probe.add_argument("--device", action="append", choices=[d.value for d in ALL_DEVICES])
@@ -83,6 +87,22 @@ def parse_candidate(spec: str, default_model: str) -> ClassifyCandidate:
     )
 
 
+def fetch_weights(models: ModelsConfig, env: Mapping[str, str]) -> bool:
+    """Download missing weights, one line per entry; False when any could not be fetched."""
+
+    def announce(slot: Slot, ref: str) -> None:
+        say(f"fetching {slot} weights {ref}")
+
+    ok = True
+    for result in ensure_weights(models, env, announce):
+        if result.error is not None:
+            complain("models fetch", f"{result.slot} weights {result.ref}: {result.error}")
+            ok = False
+        elif result.fetched:
+            say(f"fetched {result.slot} weights {result.ref} -> {result.path}")
+    return ok
+
+
 def run(args: argparse.Namespace, ctx: CommandContext) -> int:
     try:
         root = discover_root(ctx.cwd)
@@ -93,6 +113,11 @@ def run(args: argparse.Namespace, ctx: CommandContext) -> int:
     except ConfigError as exc:
         complain("models", str(exc))
         return EXIT_FAILED
+    if args.models_command == "fetch":
+        if not fetch_weights(config.models, ctx.env):
+            return EXIT_FAILED
+        say("weights ready")
+        return EXIT_OK
     raw_specs: list[str] = args.candidate or []
     try:
         candidates = tuple(

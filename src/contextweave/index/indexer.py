@@ -12,6 +12,7 @@ from contextweave.index.progress import Progress, ProgressSink, discard
 from contextweave.index.records import Changed
 from contextweave.index.store import Store
 from contextweave.index.walk import walk_project
+from contextweave.models.residency import Profile
 from contextweave.models.slots import ModelSlots
 
 SCAN_STAGE = "scan"
@@ -39,10 +40,12 @@ def index_project(
     cache: DerivedCache | None = None,
     env: Mapping[str, str] | None = None,
     on_progress: ProgressSink = discard,
+    bulk: bool = False,
 ) -> IndexReport:
     """Reconcile the db with the tree, then annotate and embed changed chunks given model slots.
 
     env enables sizing chunks with the embed model's local tokenizer.json when one is present.
+    bulk gives each model the GPU alone in turn: annotate first, then embed.
     """
     tokenizer: ChunkTokenizer | None = (
         embed_tokenizer(config.models.embed.model, env) if env is not None else None
@@ -79,6 +82,8 @@ def index_project(
         on_progress(Progress(EDGES_STAGE, 0, 1))
         resolve_edges(store, config.index.test_globs, events=config.edges.events)
         on_progress(Progress(EDGES_STAGE, 1, 1))
+        if bulk and slots is not None:
+            slots.apply_profile(Profile.BULK_ANNOTATE)
         annotated = (
             annotate_project(
                 store, slots, cache, config, on_progress=annotate_progress(on_progress)
@@ -86,6 +91,8 @@ def index_project(
             if slots is not None and cache is not None
             else None
         )
+        if bulk and slots is not None:
+            slots.apply_profile(Profile.BULK_EMBED)
         embedded = (
             embed_project(store, slots, cache, config, tokenizer=tokenizer, on_progress=on_progress)
             if slots is not None and cache is not None

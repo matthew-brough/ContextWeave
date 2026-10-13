@@ -239,6 +239,7 @@ def _status(service: DaemonService, params: Params) -> JSON:
                     "warn": health.warn,
                     "slow_rate": round(health.slow_rate, 4),
                     "slow_warn": health.slow_warn,
+                    "reason": health.reason,
                 }
             )
     return {

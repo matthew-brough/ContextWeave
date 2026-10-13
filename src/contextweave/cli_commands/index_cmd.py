@@ -24,6 +24,7 @@ from contextweave.index.annotate import (
     annotate_lines,
     annotate_progress,
     annotate_project,
+    degraded_lines,
 )
 from contextweave.index.embed import EmbedReport, embed_project
 from contextweave.index.indexer import IndexReport, index_project
@@ -41,7 +42,7 @@ def add_parser(commands: SubparserRegistry) -> None:
 
 def _embed_lines(report: EmbedReport) -> list[str]:
     lines = [f"embedded {report.embedded} chunks, {report.cached} cached, {report.pending} pending"]
-    lines.extend(f"degraded {entry['stage']}: {entry['reason']}" for entry in report.degraded)
+    lines.extend(degraded_lines(report.degraded))
     return lines
 
 

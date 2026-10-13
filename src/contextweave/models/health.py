@@ -23,6 +23,7 @@ class HealthStatus:
     warn: bool
     slow_rate: float = 0.0
     slow_warn: bool = False
+    reason: str | None = None
 
 
 class SlotHealth:
@@ -53,6 +54,7 @@ class SlotHealth:
         self._lock = RLock()
         self._ready: Device | None = self.chain[0] if self.chain and loaded else None
         self._down: dict[Device, float] = {}
+        self._last_error: str | None = None
         self._warming = False
         self._suspended = False
         self._recent: deque[bool] = deque(maxlen=window)
@@ -82,6 +84,8 @@ class SlotHealth:
                 return "slot stopped by residency profile"
             if self._warming:
                 return "device warming up"
+            if self._last_error is not None:
+                return f"no device ready, last start failed: {self._last_error}"
             return "no device ready"
 
     def record_success(self, *, slow: bool = False) -> None:
@@ -117,14 +121,16 @@ class SlotHealth:
             self._ready = None
         try:
             self._warm(device)
-        except Exception:
+        except Exception as exc:
             with self._lock:
                 self._down[device] = self._clock() + self._retry_after_s
+                self._last_error = _describe(exc)
                 self._warming = False
             self._maybe_warm()
             return False
         with self._lock:
             self._ready = device
+            self._last_error = None
             self._warming = False
         return True
 
@@ -159,9 +165,10 @@ class SlotHealth:
             down = tuple(device for device in self.chain if device in self._down)
             calls = len(self._recent)
         slow = self.slow_rate()
+        active = self.active
         return HealthStatus(
             self.slot,
-            self.active,
+            active,
             down,
             self._skips,
             calls,
@@ -169,6 +176,7 @@ class SlotHealth:
             self.should_warn(),
             slow,
             slow > self._slow_warn,
+            None if active is not None or not self.chain else self.unavailable_reason(),
         )
 
     def _candidates(self) -> list[Device]:
@@ -198,9 +206,10 @@ class SlotHealth:
         while target is not None:
             try:
                 self._warm(target)
-            except Exception:
+            except Exception as exc:
                 with self._lock:
                     self._down[target] = self._clock() + self._retry_after_s
+                    self._last_error = _describe(exc)
                     candidates = self._candidates()
                     target = candidates[0] if candidates else None
                     if target is None:
@@ -208,5 +217,10 @@ class SlotHealth:
                 continue
             with self._lock:
                 self._ready = target
+                self._last_error = None
                 self._warming = False
             return
+
+
+def _describe(exc: Exception) -> str:
+    return str(exc) or type(exc).__name__

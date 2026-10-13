@@ -1,3 +1,4 @@
+import os
 import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -53,6 +54,7 @@ from contextweave.models.residency import (
     http_probe,
 )
 from contextweave.models.systemone import build_systemone
+from contextweave.models.weights import launch_expander, slot_weights, weights_root
 
 NONE = "none"
 LLAMA_SERVER = "llama_server"
@@ -140,6 +142,7 @@ class ModelSlots:
         launcher: ProcessLauncher | None = None,
         probe: Probe | None = None,
         calibration: Calibration | None = None,
+        env: Mapping[str, str] | None = None,
     ) -> ModelSlots:
         """Build clients, health state and residency from config."""
         available = registries or default_registries()
@@ -159,8 +162,16 @@ class ModelSlots:
             Slot.ANNOTATE: annotate,
             Slot.CLASSIFY: decision,
         }
+        root = weights_root(models, os.environ if env is None else env)
+        expanders = {
+            slot: launch_expander(refs, root) for slot, refs in slot_weights(models).items()
+        }
         backends = _backends(
-            providers, launcher or SubprocessLauncher(), probe or http_probe(transport), clock
+            providers,
+            launcher or SubprocessLauncher(),
+            probe or http_probe(transport),
+            clock,
+            expanders,
         )
         chains: Mapping[Slot, tuple[Device, ...]] = {
             Slot.EMBED: tuple(embed.devices),
@@ -303,10 +314,16 @@ def _calibration_key(models: ModelsConfig) -> CalibrationKey:
 
 
 def _backends(
-    providers: Mapping[Slot, object], launcher: ProcessLauncher, probe: Probe, clock: Clock
+    providers: Mapping[Slot, object],
+    launcher: ProcessLauncher,
+    probe: Probe,
+    clock: Clock,
+    expanders: Mapping[Slot, Callable[[str], str]],
 ) -> dict[Slot, ServerBackend]:
     return {
-        slot: ServerBackend(slot, provider.servers, launcher, probe, clock=clock)
+        slot: ServerBackend(
+            slot, provider.servers, launcher, probe, clock=clock, expand=expanders[slot]
+        )
         for slot, provider in providers.items()
         if isinstance(provider, Supervised)
     }
