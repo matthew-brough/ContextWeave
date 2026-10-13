@@ -11,6 +11,7 @@ from contextweave.core.errors import OmittedEntry
 from contextweave.eval.mcp_adapters import DISABLE_STAGE_ENV, FULL_PROFILE, PROFILE_ENV
 from contextweave.index.projects import ProjectRegistry
 from contextweave.index.store import Store
+from contextweave.memory.savings import SavingsSink
 from contextweave.models.calibration import calibration_path, load_calibration
 from contextweave.models.residency import Profile
 from contextweave.models.slots import ModelSlots
@@ -64,6 +65,7 @@ class ToolContext:
     roots: tuple[Path, ...] = ()
     packs: PackCache = field(default_factory=lambda: PackCache(20))
     models: ModelSlots | None = None
+    ledger: SavingsSink | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "config", eval_config(self.config, os.environ))

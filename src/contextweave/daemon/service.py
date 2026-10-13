@@ -25,6 +25,7 @@ from contextweave.daemon.scheduler import ActivityGate, JobKind, Priority, Sched
 from contextweave.daemon.skipwarn import skip_rate_warnings
 from contextweave.daemon.watcher import FileEvent, PollWatcher
 from contextweave.index.projects import ProjectEntry, ProjectRegistry
+from contextweave.memory.savings import ledger_sink
 from contextweave.models.residency import Profile
 from contextweave.server import resources
 from contextweave.server.context import PackCache, ToolContext, inproc_opener
@@ -136,6 +137,7 @@ class DaemonService:
             registry,
             inproc_opener(config, readonly=False),
             packs=PackCache(config.server.pack_cache),
+            ledger=ledger_sink(env),
         )
         return cls(
             env,

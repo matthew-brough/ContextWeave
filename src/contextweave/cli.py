@@ -40,6 +40,7 @@ from contextweave.daemon.server import run_daemon
 from contextweave.daemon.shim import run_shim, shim_backend
 from contextweave.eval.cli_entry import add_eval_parser, options_from_args, run_eval
 from contextweave.index.projects import ProjectRegistry
+from contextweave.memory.savings import ledger_sink
 from contextweave.server.context import ToolContext, inproc_opener
 from contextweave.server.mcp import run_stdio
 
@@ -88,11 +89,21 @@ def _serve(inproc: bool, readonly: bool, env: Mapping[str, str]) -> int:
     if inproc:
         attached = readonly or is_running(env)
         context = ToolContext(
-            config, registry, inproc_opener(config, readonly=attached), cwd=Path.cwd()
+            config,
+            registry,
+            inproc_opener(config, readonly=attached),
+            cwd=Path.cwd(),
+            ledger=ledger_sink(env),
         )
         run_stdio(context)
         return 0
-    local = ToolContext(config, registry, inproc_opener(config, readonly=True), cwd=Path.cwd())
+    local = ToolContext(
+        config,
+        registry,
+        inproc_opener(config, readonly=True),
+        cwd=Path.cwd(),
+        ledger=ledger_sink(env),
+    )
     client = client_for(env)
     run_shim(shim_backend(local, client, lambda: ensure_running(env)))
     return 0

@@ -16,6 +16,8 @@ from contextweave.feedback.served import record_served_pack
 from contextweave.lang.parse import parse_bytes
 from contextweave.lang.registry import Group, load_language
 from contextweave.lang.ts import run_matches
+from contextweave.memory.savings import full_file_tokens
+from contextweave.memory.store import SavingsBucket
 from contextweave.retrieve.pack import (
     BudgetWire,
     ContextPack,
@@ -69,6 +71,7 @@ SCHEMA_DEPTH = 4
 DEFAULT_DEPTH = 2
 
 _JSON_OBJECT: TypeAdapter[dict[str, JSON]] = TypeAdapter(dict[str, JSON])
+_UNSERVED_KEYS = frozenset({"omitted", "errors", "degraded", "project"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,9 +194,12 @@ def define[A: Mapping[str, object], P: Mapping[str, object]](tool: Tool[A, P]) -
                         )
                     )
                     payload = tool.empty(echo, env)
-                return finish(payload)
+                result = finish(payload)
             finally:
                 snap.close()
+        if ctx.ledger is not None and not env.errors:
+            _record_savings(ctx, resolution, tool.name, result)
+        return result
 
     spec = ToolSpec(
         tool.name,
@@ -203,6 +209,38 @@ def define[A: Mapping[str, object], P: Mapping[str, object]](tool: Tool[A, P]) -
         execute,
     )
     return TOOLS.register(tool.name, spec)
+
+
+def served_paths(value: JSON) -> set[str]:
+    """Distinct file paths of the items a payload served, skipping omitted and diagnostic entries."""
+    match value:
+        case dict():
+            found: set[str] = set()
+            for key, child in value.items():
+                if key == "path" and isinstance(child, str):
+                    found.add(child)
+                elif key not in _UNSERVED_KEYS:
+                    found |= served_paths(child)
+            return found
+        case list():
+            found = set[str]()
+            for child in value:
+                found |= served_paths(child)
+            return found
+        case _:
+            return set()
+
+
+def _record_savings(
+    ctx: ToolContext, resolution: ResolvedProject, name: str, result: ToolResult
+) -> None:
+    if ctx.ledger is None:
+        return
+    baseline = full_file_tokens(resolution.root, served_paths(result.structured))
+    if baseline <= 0:
+        return
+    bucket: SavingsBucket = "progressive_disclosure" if name == "expand" else "retrieval"
+    ctx.ledger(resolution.key, bucket, bytes35(result.text), baseline)
 
 
 def _omit(ref: str, qualified_name: str, path: str) -> OmittedEntry:

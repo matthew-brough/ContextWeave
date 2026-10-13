@@ -1,13 +1,16 @@
 import json
 import math
-from collections.abc import Iterable, Mapping
+import sqlite3
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
 from contextweave.core.types import JSON
-from contextweave.memory.store import MemoryStore, SavingsBucket
+from contextweave.memory.store import MemoryStore, MemoryStoreError, SavingsBucket, memory_db_path
 from contextweave.memory.wire import SavingsBucketTotals
 
 BYTES_PER_TOKEN = 3.5
+
+type SavingsSink = Callable[[str, SavingsBucket, int, int], None]
 
 
 def full_file_tokens(root: Path, paths: Iterable[str]) -> int:
@@ -38,3 +41,21 @@ def record_savings(
 def savings_summary(store: MemoryStore) -> dict[SavingsBucket, SavingsBucketTotals]:
     """Per-bucket baseline, served, saved and call totals."""
     return store.savings_totals()
+
+
+def ledger_sink(env: Mapping[str, str]) -> SavingsSink:
+    """Sink that appends (key, bucket, served, baseline) to the project's memory.db; fail-open."""
+
+    def sink(key: str, bucket: SavingsBucket, served: int, baseline: int) -> None:
+        try:
+            store = MemoryStore.open(memory_db_path(key, env), key)
+        except MemoryStoreError, sqlite3.Error, OSError:
+            return
+        try:
+            record_savings(store, tokens_served=served, full_file_tokens=baseline, bucket=bucket)
+        except sqlite3.Error:
+            return
+        finally:
+            store.close()
+
+    return sink
