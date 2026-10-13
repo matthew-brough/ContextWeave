@@ -19,7 +19,7 @@ def test_ask_returns_answers_per_state() -> None:
 
 
 def test_ask_applies_fitted_temperature() -> None:
-    key = CalibrationKey("kev-latest", "kev-4b-int8-emb8", 2)
+    key = CalibrationKey("kev-latest", "kev-0.8b-int8", 2)
     slots = fake_slots(FakeDecision(), calibration=Calibration({key: {"answers_query": 4.0}}))
     outcome = slots.ask(["good"], [NOUL], stage="gate")
     assert isinstance(outcome, Done)

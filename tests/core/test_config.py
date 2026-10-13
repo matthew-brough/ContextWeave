@@ -35,7 +35,7 @@ def test_defaults_match_spec(tmp_path: Path, xdg: dict[str, str]) -> None:
     assert (config.chunk.max_tokens, config.chunk.min_tokens) == (800, 40)
     assert config.fuse.keep == 100
     assert (config.gate.window, config.gate.expand_window) == (24, 8)
-    assert (config.gate.card_tokens, config.gate.critical) == (128, 0.8)
+    assert (config.gate.card_tokens, config.gate.critical) == (512, 0.8)
     assert (config.expand.min_score, config.expand.max_depth) == (0.6, 2)
     assert config.coverage.max_iterations == 2
     assert config.budget.default_max_tokens == 4000
@@ -58,7 +58,7 @@ def test_defaults_match_spec(tmp_path: Path, xdg: dict[str, str]) -> None:
     assert config.models.embed.dim == 1536
     assert config.models.classify.devices == ("gpu",)
     assert config.models.classify.model == "kev-latest"
-    assert config.models.classify.build_id == "kev-4b-int8-emb8"
+    assert config.models.classify.build_id == "kev-0.8b-int8"
     assert config.models.classify.parallel == 8
     assert (config.models.annotate.parallel, config.models.annotate.max_output_tokens) == (4, 512)
     assert config.models.classify.gpu.endpoint == "http://127.0.0.1:8765"

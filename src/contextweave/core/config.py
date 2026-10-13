@@ -49,7 +49,7 @@ class FuseConfig:
 class GateConfig:
     window: int = 24
     expand_window: int = 8
-    card_tokens: int = 128
+    card_tokens: int = 512
     critical: float = 0.8
 
 
@@ -148,7 +148,7 @@ class ClassifyConfig:
     model: str = "kev-latest"
     devices: tuple[str, ...] = ("gpu",)
     question_set_version: int = 2
-    build_id: str = "kev-4b-int8-emb8"
+    build_id: str = "kev-0.8b-int8"
     parallel: int = 8
     gpu: DeviceEndpointConfig = field(default_factory=_local(8765))
     cpu: DeviceEndpointConfig = field(default_factory=_local(8766))

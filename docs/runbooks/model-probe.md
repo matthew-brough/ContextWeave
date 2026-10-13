@@ -37,11 +37,11 @@ slot uses is the endpoint its calls go to.
 | embed | cpu | same, `-ngl 0 --port 8771` |
 | annotate | gpu | `llama-server -hf unsloth/Qwen3.5-4B-GGUF:Q4_K_M --jinja -c 32768 -np 4 -ngl 99 --cache-ram 0 --port 8772` |
 | annotate | cpu | same, `-ngl 0 --port 8773` |
-| classify | gpu | `KEV_QUANT=int8 KEV_GRAPH_BANK_WIDTH=1024 KEV_GRAPH_TOKENS=8192 KEV_GRAPH_ROWS=16 KEV_GRAPH_STATES=8 uv run python -m kev.serve --run jaredpalmer/kev-4b --device cuda --port 8765` (in the fork checkout) |
+| classify | gpu | `KEV_QUANT=int8 KEV_GRAPH_BANK_WIDTH=1024 KEV_GRAPH_TOKENS=16384 KEV_GRAPH_ROWS=16 KEV_GRAPH_STATES=8 uv run python -m kev.serve --run jaredpalmer/kev-0.8b --device cuda --port 8765` (in the fork checkout) |
 
 Classify has no CPU server: Kev on the 5700X costs about 0.8 s per state even
-at 0.8B, so the chain is GPU then skip. The first start quantises and saves
-the model (about 75 s); later starts load the saved build in about 21 s.
+at 0.8B, so the chain is GPU then skip. Kev-0.8B int8 holds about 2.2 GB of
+GPU memory, leaving room for a GPU embed server alongside it.
 
 - Embed needs `--pooling last` (Jina uses last-token pooling); the
   `embed.pooling` line catches a server started without it.
@@ -53,8 +53,8 @@ the model (about 75 s); later starts load the saved build in about 21 s.
 - Annotate `-np` should equal `models.annotate.parallel` (4), with `-c` = slots × 8192.
   With a smaller `-c` all slots share one KV cache and concurrent chunks fail with
   "Context size has been exceeded" (`docs/results/annotate-parallel.md`).
-- `KEV_GRAPH_STATES` should equal `models.classify.parallel` (8), which is
-  also `gate.window`.
+- `KEV_GRAPH_STATES` should equal `models.classify.parallel` (8); a
+  `gate.window` of 24 runs as three batches.
 - Pin the CPU servers to separate cores with `taskset -c` and set `-t`/`-tb`
   explicitly. llama-server's default thread counts oversubscribe the 5700X
   when embed and annotate run together (see `docs/results/README.md`).
@@ -104,7 +104,7 @@ a label only; every candidate is spoken to over `/v1/systemone`:
 
 ```
 uv run cw models probe --slot classify \
-  --candidate family=kev,rung=0,build=kev-4b-int8-emb8,gpu=http://127.0.0.1:8765,model=kev-latest \
+  --candidate family=kev,rung=0,build=kev-0.8b-int8,gpu=http://127.0.0.1:8765,model=kev-latest \
   --record /tmp/probe-classify.md
 ```
 
@@ -201,7 +201,7 @@ and build id for each classify rung tried.
   query-time `models.warn_ms`; hard caps are `deadline_ms`, loose by design): the probe prints the p95-based figure
   (p95 x 1.25 rounded up to 500 ms) from `annotate.rate` cpu. GPU
   `chunks_per_s` gives the `cw init` ETA.
-- T20 classify: decided 2026-10-10 (SPEC §B.6). Kev-4B on the fork's
-  `kev.serve`, int8, GPU only, `gate.window` 8. It misses the 1.0 s pipeline
-  target and that is accepted. Quality and calibration are finished in the
-  T20 eval on this build.
+- classify: decided 2026-10-12. Kev-0.8B on the fork's `kev.serve`, int8,
+  GPU only, `gate.window` 24, `gate.card_tokens` 512. On the live eval suites it
+  matched Kev-4B recall at 1.6 to 2.5 times lower p50, and Kev-4B cannot hold
+  the widened window inside the query deadline.
