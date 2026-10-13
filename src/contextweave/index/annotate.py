@@ -4,7 +4,7 @@ import re
 import time
 from collections import deque
 from collections.abc import Callable, Mapping
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -16,6 +16,7 @@ from contextweave.index.derived import PART_SEP, DerivedAnnotation, DerivedCache
 from contextweave.index.embed import truncate_to_tokens
 from contextweave.index.progress import Progress, ProgressSink
 from contextweave.index.store import Store
+from contextweave.index.workers import worker_pool
 from contextweave.models.errors import ModelContextError, ModelParseError, ModelRequestError
 from contextweave.models.prompt_store import PROMPTS_DIR, PromptError, PromptTemplate, load_prompt
 from contextweave.models.providers import Slot
@@ -327,7 +328,7 @@ def annotate_project(
         tally.consecutive_faults += 1
         return tally.consecutive_faults < MAX_CONSECUTIVE_FAULTS
 
-    with ThreadPoolExecutor(max(annotate.parallel, 1), thread_name_prefix=STAGE) as pool:
+    with worker_pool(max(annotate.parallel, 1), STAGE) as pool:
         going = True
         for chunk in todo:
             found = cache.get_annotation(annotation_cache_key(chunk), annotate.model, version)

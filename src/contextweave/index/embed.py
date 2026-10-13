@@ -2,7 +2,7 @@ import hashlib
 import math
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from dataclasses import dataclass, field, replace
 
 from contextweave.core.config import Config, EmbedConfig
@@ -27,6 +27,7 @@ from contextweave.index.vectors import (
     vec_available,
     write_vectors,
 )
+from contextweave.index.workers import worker_pool
 from contextweave.models.errors import ModelContextError
 from contextweave.models.providers import EmbedClient, EmbedKind, Slot
 from contextweave.models.slots import ModelSlots, Skipped
@@ -328,7 +329,7 @@ def _embed_work(
         on_progress(Progress(stage, done, len(work)))
 
     on_progress(Progress(stage, done, len(work)))
-    with ThreadPoolExecutor(pace.parallel, thread_name_prefix=STAGE) as pool:
+    with worker_pool(pace.parallel, STAGE) as pool:
         in_flight: deque[_Flight] = deque()
         for start in range(0, len(work), pace.batch_size):
             if tally.degraded:

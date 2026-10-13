@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from cli_support import cw
 
+from contextweave.cli_commands import agents_cmd
 from contextweave.core.paths import user_state_dir
 from contextweave.index.projects import ProjectRegistry
 
@@ -77,3 +78,21 @@ def test_unknown_agent_is_usage_error(
     root: Path, env: dict[str, str], capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert cw(capsys, env, root, "init", "--agent", "nope").code == 2
+
+
+def test_interrupted_init_exits_130_and_leaves_no_half_install(
+    root: Path,
+    env: dict[str, str],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def interrupt(*_args: object) -> object:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(agents_cmd, "full_index", interrupt)
+    result = cw(capsys, env, root, "init")
+    assert result.code == 130
+    assert result.err.strip() == "cw init: interrupted"
+    assert ProjectRegistry(user_state_dir(env)).get(root) is None
+    assert not (root / ".claude" / "settings.json").exists()
+    assert not (root / ".mcp.json").exists()

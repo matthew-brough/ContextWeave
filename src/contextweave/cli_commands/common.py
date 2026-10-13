@@ -7,6 +7,7 @@ from typing import Protocol
 
 from contextweave.core.config import Config
 from contextweave.core.errors import ErrorEntry
+from contextweave.core.interrupt import deferred_interrupt
 from contextweave.core.paths import user_state_dir
 from contextweave.core.project import ResolvedProject, resolve_project
 from contextweave.daemon.models import ModelRuntime
@@ -65,3 +66,9 @@ def open_models(config: Config, env: Mapping[str, str]) -> ModelRuntime | None:
     except Exception as exc:
         complain("models", f"unavailable, continuing without them: {exc}")
         return None
+
+
+def close_models(models: ModelRuntime) -> None:
+    """Stop the model servers this run launched; a second Ctrl+C waits so none are orphaned."""
+    with deferred_interrupt():
+        models.close()

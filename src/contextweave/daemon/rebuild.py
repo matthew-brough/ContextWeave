@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from contextweave.core.config import Config
+from contextweave.core.interrupt import deferred_interrupt
 from contextweave.index.chunk_tokens import ChunkTokenizer
 from contextweave.index.indexer import SCAN_STAGE
 from contextweave.index.progress import Progress, ProgressSink, discard
@@ -77,15 +78,16 @@ def swap_shadow(root: Path) -> bool:
     if not shadow.is_file():
         return False
     live = state_dir(root) / DB_NAME
-    if live.is_file():
-        connection = sqlite3.connect(live)
-        try:
-            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-        except sqlite3.DatabaseError:
-            pass
-        finally:
-            connection.close()
-    shadow.replace(live)
-    for suffix in SIDECARS:
-        Path(f"{live}{suffix}").unlink(missing_ok=True)
+    with deferred_interrupt():
+        if live.is_file():
+            connection = sqlite3.connect(live)
+            try:
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.DatabaseError:
+                pass
+            finally:
+                connection.close()
+        shadow.replace(live)
+        for suffix in SIDECARS:
+            Path(f"{live}{suffix}").unlink(missing_ok=True)
     return True

@@ -7,6 +7,7 @@ from contextweave.cli_commands.common import (
     EXIT_OK,
     CommandContext,
     SubparserRegistry,
+    close_models,
     complain,
     current_project,
     open_models,
@@ -122,7 +123,7 @@ def _rebuild_local(
     finally:
         printer.close()
         if models is not None:
-            models.close()
+            close_models(models)
     return derived[0] if derived else None
 
 
@@ -159,7 +160,7 @@ def run(args: argparse.Namespace, ctx: CommandContext) -> int:
         try:
             annotate_report = _annotate_only(project.root, config, models)
         finally:
-            models.close()
+            close_models(models)
         for line in annotate_lines(annotate_report):
             say(line)
         return EXIT_OK
@@ -171,7 +172,7 @@ def run(args: argparse.Namespace, ctx: CommandContext) -> int:
         try:
             embed_report = _embed_only(project.root, config, models)
         finally:
-            models.close()
+            close_models(models)
         for line in _embed_lines(embed_report):
             say(line)
         return EXIT_OK

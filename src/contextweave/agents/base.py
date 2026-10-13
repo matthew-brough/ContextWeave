@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from contextweave.core.atomic import write_atomic
 from contextweave.core.registry import Registry
 
 
@@ -88,8 +89,7 @@ def apply_changes(changes: list[FileChange], stop: Path) -> None:
             change.path.unlink(missing_ok=True)
             _prune_empty_dirs(change.path.parent, stop)
         else:
-            change.path.parent.mkdir(parents=True, exist_ok=True)
-            change.path.write_bytes(change.after.encode("utf-8"))
+            write_atomic(change.path, change.after.encode("utf-8"))
 
 
 def plan_change(path: Path, after: str | None) -> FileChange | None:

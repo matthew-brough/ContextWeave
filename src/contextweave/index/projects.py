@@ -8,6 +8,7 @@ from pathlib import Path
 
 import tomli_w
 
+from contextweave.core.atomic import write_atomic
 from contextweave.core.paths import MEMORY_DB_NAME
 from contextweave.core.refs import project_key
 from contextweave.index.root import LOCAL_STATE, STATE_DIR, is_dir_link, remove_dir_link
@@ -53,7 +54,7 @@ class ProjectRegistry:
         directory = self._dir(key)
         directory.mkdir(parents=True, exist_ok=True)
         meta = {"root": str(root), "created": created, "last_used": last_used}
-        (directory / META_FILE).write_text(tomli_w.dumps(meta), encoding="utf-8")
+        write_atomic(directory / META_FILE, tomli_w.dumps(meta).encode("utf-8"))
 
     def _read(self, key: str) -> ProjectEntry | None:
         meta_path = self._dir(key) / META_FILE

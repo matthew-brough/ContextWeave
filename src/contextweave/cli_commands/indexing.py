@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TextIO
 
-from contextweave.cli_commands.common import open_models
+from contextweave.cli_commands.common import close_models, open_models
 from contextweave.core.config import Config
 from contextweave.index.annotate import format_eta
 from contextweave.index.indexer import IndexReport, index_project
@@ -93,4 +93,4 @@ def full_index(root: Path, config: Config, env: Mapping[str, str]) -> IndexRepor
     finally:
         printer.close()
         if models is not None:
-            models.close()
+            close_models(models)

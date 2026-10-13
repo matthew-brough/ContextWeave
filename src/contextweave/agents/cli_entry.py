@@ -9,6 +9,7 @@ from contextweave.agents.conflicts import Conflict, detect_conflicts, format_con
 from contextweave.agents.hooks import run_hook as dispatch_hook
 from contextweave.agents.transport import HookTransport, IpcTransport
 from contextweave.core.config import Config, ConfigError, load_config
+from contextweave.core.interrupt import deferred_interrupt
 from contextweave.core.paths import user_state_dir
 from contextweave.core.registry import UnknownKeyError
 from contextweave.daemon.lifecycle import client_for
@@ -96,14 +97,15 @@ def run_init(
         report = indexer(project, config)
     except Exception as exc:
         return _failure(EXIT_FAILED, f"index failed, project not registered: {exc}")
-    ProjectRegistry(user_state_dir(environment)).register(project)
-    changes = (
-        []
-        if adapter is None
-        else adapter.install(
-            project, InstallOpts(user_home, plugin, plugin_dir, dry_run=False, env=environment)
+    with deferred_interrupt():
+        ProjectRegistry(user_state_dir(environment)).register(project)
+        changes = (
+            []
+            if adapter is None
+            else adapter.install(
+                project, InstallOpts(user_home, plugin, plugin_dir, dry_run=False, env=environment)
+            )
         )
-    )
     return CommandResult(
         EXIT_OK, describe_index(report), tuple(changes), conflicts, registered=True
     )

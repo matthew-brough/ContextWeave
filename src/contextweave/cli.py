@@ -21,9 +21,10 @@ from contextweave.cli_commands import (
     status,
     tune,
 )
-from contextweave.cli_commands.common import CommandContext
+from contextweave.cli_commands.common import CommandContext, complain
 from contextweave.core.config import load_config
 from contextweave.core.dist import package_version
+from contextweave.core.interrupt import EXIT_INTERRUPTED
 from contextweave.core.paths import user_state_dir
 from contextweave.core.types import JSON
 from contextweave.daemon.client import DaemonUnavailable, RemoteError
@@ -222,7 +223,11 @@ def main(
         parser.print_help()
         return 0
     context = CommandContext(os.environ if env is None else env, cwd or Path.cwd())
-    return _dispatch(args, context)
+    try:
+        return _dispatch(args, context)
+    except KeyboardInterrupt:
+        complain(args.command, "interrupted")
+        return EXIT_INTERRUPTED
 
 
 if __name__ == "__main__":
