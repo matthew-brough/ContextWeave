@@ -14,6 +14,7 @@ from contextweave.core.types import JSON
 from contextweave.index.chunk_tokens import ChunkTokenizer, default_tokenizer
 from contextweave.index.derived import PART_SEP, DerivedAnnotation, DerivedCache
 from contextweave.index.embed import truncate_to_tokens
+from contextweave.index.progress import Progress, ProgressSink
 from contextweave.index.store import Store
 from contextweave.models.errors import ModelContextError, ModelParseError, ModelRequestError
 from contextweave.models.prompt_store import PROMPTS_DIR, PromptError, PromptTemplate, load_prompt
@@ -294,6 +295,8 @@ def annotate_project(
     submitted = 0
     started: float | None = None
     in_flight: deque[_InFlight] = deque()
+    if on_progress is not None:
+        on_progress(AnnotateProgress(total - left, total, None, None))
 
     def record(chunk: PendingChunk, found: DerivedAnnotation) -> None:
         nonlocal left
@@ -360,6 +363,15 @@ def annotate_project(
         _eta(pending, tally.rate),
         tuple(tally.degraded),
     )
+
+
+def annotate_progress(sink: ProgressSink) -> Callable[[AnnotateProgress], None]:
+    """Forward annotate progress to a generic stage progress sink."""
+
+    def forward(progress: AnnotateProgress) -> None:
+        sink(Progress(STAGE, progress.done, progress.total, progress.eta_s))
+
+    return forward
 
 
 def format_eta(seconds: float) -> str:

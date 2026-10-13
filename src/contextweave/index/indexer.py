@@ -1,17 +1,21 @@
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from contextweave.core.config import Config
-from contextweave.index.annotate import AnnotateProgress, AnnotateReport, annotate_project
+from contextweave.index.annotate import AnnotateReport, annotate_progress, annotate_project
 from contextweave.index.chunk_tokens import ChunkTokenizer, embed_tokenizer
 from contextweave.index.derived import DerivedCache
 from contextweave.index.edges import resolve_edges
 from contextweave.index.embed import EmbedReport, embed_project
+from contextweave.index.progress import Progress, ProgressSink, discard
 from contextweave.index.records import Changed
 from contextweave.index.store import Store
 from contextweave.index.walk import walk_project
 from contextweave.models.slots import ModelSlots
+
+SCAN_STAGE = "scan"
+EDGES_STAGE = "edges"
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +38,7 @@ def index_project(
     slots: ModelSlots | None = None,
     cache: DerivedCache | None = None,
     env: Mapping[str, str] | None = None,
-    on_annotate_progress: Callable[[AnnotateProgress], None] | None = None,
+    on_progress: ProgressSink = discard,
 ) -> IndexReport:
     """Reconcile the db with the tree, then annotate and embed changed chunks given model slots.
 
@@ -52,7 +56,8 @@ def index_project(
         added: list[str] = []
         updated: list[str] = []
         unchanged = 0
-        for item in walked:
+        on_progress(Progress(SCAN_STAGE, 0, len(walked)))
+        for done, item in enumerate(walked, 1):
             previous = known.get(item.path)
             result = store.refresh(item.path)
             if previous is None and result.data is not None:
@@ -66,18 +71,23 @@ def index_project(
                 updated.append(item.path)
             else:
                 unchanged += 1
+            on_progress(Progress(SCAN_STAGE, done, len(walked)))
         present = {item.path for item in walked}
         removed = tuple(path for path in sorted(known) if path not in present)
         for path in removed:
             store.delete_file(path)
+        on_progress(Progress(EDGES_STAGE, 0, 1))
         resolve_edges(store, config.index.test_globs, events=config.edges.events)
+        on_progress(Progress(EDGES_STAGE, 1, 1))
         annotated = (
-            annotate_project(store, slots, cache, config, on_progress=on_annotate_progress)
+            annotate_project(
+                store, slots, cache, config, on_progress=annotate_progress(on_progress)
+            )
             if slots is not None and cache is not None
             else None
         )
         embedded = (
-            embed_project(store, slots, cache, config, tokenizer=tokenizer)
+            embed_project(store, slots, cache, config, tokenizer=tokenizer, on_progress=on_progress)
             if slots is not None and cache is not None
             else None
         )

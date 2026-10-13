@@ -12,13 +12,18 @@ from contextweave.cli_commands.common import (
     open_models,
     say,
 )
-from contextweave.cli_commands.indexing import full_index, progress_printer
+from contextweave.cli_commands.indexing import ProgressPrinter, full_index
 from contextweave.core.config import Config, load_config
 from contextweave.daemon.client import DaemonUnavailable, RemoteError
 from contextweave.daemon.lifecycle import client_for, is_running
 from contextweave.daemon.models import DeriveReport, ModelRuntime
 from contextweave.daemon.rebuild import build_shadow, swap_shadow
-from contextweave.index.annotate import AnnotateReport, annotate_lines, annotate_project
+from contextweave.index.annotate import (
+    AnnotateReport,
+    annotate_lines,
+    annotate_progress,
+    annotate_project,
+)
 from contextweave.index.embed import EmbedReport, embed_project
 from contextweave.index.indexer import IndexReport, index_project
 from contextweave.index.store import Store
@@ -53,15 +58,30 @@ def _report_lines(report: IndexReport) -> list[str]:
 
 
 def _embed_only(root: Path, config: Config, models: ModelRuntime) -> EmbedReport:
-    with Store.open(root, chunk_config=config.chunk, tokenizer=models.tokenizer) as store:
-        return embed_project(store, models.slots, models.cache, config, tokenizer=models.tokenizer)
+    printer = ProgressPrinter()
+    try:
+        with Store.open(root, chunk_config=config.chunk, tokenizer=models.tokenizer) as store:
+            return embed_project(
+                store,
+                models.slots,
+                models.cache,
+                config,
+                tokenizer=models.tokenizer,
+                on_progress=printer,
+            )
+    finally:
+        printer.close()
 
 
 def _annotate_only(root: Path, config: Config, models: ModelRuntime) -> AnnotateReport:
-    with Store.open(root, chunk_config=config.chunk, tokenizer=models.tokenizer) as store:
-        return annotate_project(
-            store, models.slots, models.cache, config, on_progress=progress_printer()
-        )
+    printer = ProgressPrinter()
+    try:
+        with Store.open(root, chunk_config=config.chunk, tokenizer=models.tokenizer) as store:
+            return annotate_project(
+                store, models.slots, models.cache, config, on_progress=annotate_progress(printer)
+            )
+    finally:
+        printer.close()
 
 
 def _rebuild_via_daemon(env: Mapping[str, str], key: str) -> bool:
@@ -84,20 +104,23 @@ def _rebuild_local(
     """Build the shadow with each model alone on the GPU in turn, then swap; the derive report."""
     models = open_models(config, env) if stage != "structure" else None
     derived: list[DeriveReport] = []
+    printer = ProgressPrinter()
     try:
 
         def finish(store: Store) -> None:
             if models is not None:
-                derived.append(models.bulk_derive(store, serve_after=False))
+                derived.append(models.bulk_derive(store, serve_after=False, on_progress=printer))
 
         build_shadow(
             root,
             config,
             tokenizer=models.tokenizer if models is not None else None,
             finish=finish if models is not None else None,
+            on_progress=printer,
         )
         swap_shadow(root)
     finally:
+        printer.close()
         if models is not None:
             models.close()
     return derived[0] if derived else None
@@ -120,7 +143,12 @@ def run(args: argparse.Namespace, ctx: CommandContext) -> int:
             say(line)
         return EXIT_OK
     if stage == "structure":
-        for line in _report_lines(index_project(project.root, config, env=ctx.env)):
+        printer = ProgressPrinter()
+        try:
+            report = index_project(project.root, config, env=ctx.env, on_progress=printer)
+        finally:
+            printer.close()
+        for line in _report_lines(report):
             say(line)
         return EXIT_OK
     if stage == "annotate":
@@ -141,10 +169,10 @@ def run(args: argparse.Namespace, ctx: CommandContext) -> int:
             complain("index", "embed stage needs usable models")
             return EXIT_FAILED
         try:
-            report = _embed_only(project.root, config, models)
+            embed_report = _embed_only(project.root, config, models)
         finally:
             models.close()
-        for line in _embed_lines(report):
+        for line in _embed_lines(embed_report):
             say(line)
         return EXIT_OK
     for line in _report_lines(full_index(project.root, config, ctx.env)):

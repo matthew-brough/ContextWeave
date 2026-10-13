@@ -9,6 +9,7 @@ from contextweave.core.config import Config, EmbedConfig
 from contextweave.core.errors import DegradedEntry
 from contextweave.index.chunk_tokens import ChunkTokenizer, FileTokenizer, default_tokenizer
 from contextweave.index.derived import WHOLE, DerivedCache
+from contextweave.index.progress import Progress, ProgressSink, discard
 from contextweave.index.store import Store
 from contextweave.index.vectors import (
     ANNOT,
@@ -313,9 +314,20 @@ def _embed_work(
     cache: DerivedCache,
     tally: _Tally,
     pace: _Pace,
+    on_progress: ProgressSink,
 ) -> None:
     """Embed work in batches, pace.parallel at once and QUEUE_DEPTH times that queued, settled in order."""
     spec = sink.spec
+    stage = f"{STAGE} {spec.kind}"
+    done = 0
+
+    def settle(flight: _Flight) -> None:
+        nonlocal done
+        _settle(flight, sink, cache, tally)
+        done += len(flight.batch)
+        on_progress(Progress(stage, done, len(work)))
+
+    on_progress(Progress(stage, done, len(work)))
     with ThreadPoolExecutor(pace.parallel, thread_name_prefix=STAGE) as pool:
         in_flight: deque[_Flight] = deque()
         for start in range(0, len(work), pace.batch_size):
@@ -342,9 +354,9 @@ def _embed_work(
             )
             in_flight.append(_Flight(batch, found, future))
             if len(in_flight) >= pace.parallel * QUEUE_DEPTH:
-                _settle(in_flight.popleft(), sink, cache, tally)
+                settle(in_flight.popleft())
         while in_flight:
-            _settle(in_flight.popleft(), sink, cache, tally)
+            settle(in_flight.popleft())
     sink.flush()
 
 
@@ -366,6 +378,7 @@ def embed_project(
     batch_size: int = DEFAULT_BATCH,
     max_chunks: int | None = None,
     max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS,
+    on_progress: ProgressSink = discard,
 ) -> EmbedReport:
     """Embed chunks lacking a current vector; doubles as the background space rebuild job.
 
@@ -396,7 +409,7 @@ def embed_project(
         todo = pending_inputs(store, space, inputs) if space else inputs
         work = todo if max_chunks is None else todo[: max(max_chunks - tally.embedded, 0)]
         sink = _Sink(store, spec, space)
-        _embed_work(work, sink, slots, cache, tally, pace)
+        _embed_work(work, sink, slots, cache, tally, pace, on_progress)
         space = sink.space
         left = len(pending_inputs(store, space, inputs)) if space else len(inputs)
         remaining += left

@@ -6,6 +6,8 @@ from pathlib import Path
 
 from contextweave.core.config import Config
 from contextweave.index.chunk_tokens import ChunkTokenizer
+from contextweave.index.indexer import SCAN_STAGE
+from contextweave.index.progress import Progress, ProgressSink, discard
 from contextweave.index.root import state_dir
 from contextweave.index.store import DB_NAME, Store
 from contextweave.index.walk import walk_project
@@ -37,6 +39,7 @@ def build_shadow(
     *,
     tokenizer: ChunkTokenizer | None = None,
     finish: Finish | None = None,
+    on_progress: ProgressSink = discard,
 ) -> RebuildReport:
     """Build a complete index into index.next.db while the live db keeps serving."""
     staging = _staging_root(root)
@@ -49,8 +52,10 @@ def build_shadow(
         with Store.open(staging, chunk_config=config.chunk, tokenizer=tokenizer) as store:
             store.root = root
             walked = walk_project(root, config.index.ignore, config.index.include)
-            for item in walked:
+            on_progress(Progress(SCAN_STAGE, 0, len(walked)))
+            for done, item in enumerate(walked, 1):
                 store.refresh(item.path)
+                on_progress(Progress(SCAN_STAGE, done, len(walked)))
             if finish is not None:
                 finish(store)
             generation = store.generation
