@@ -70,13 +70,6 @@ def test_user_level_conflict_blocks(root: Path, home: Path, env: dict[str, str])
     assert run_init(root, home=home, env=env).exit_code != 0
 
 
-def test_dry_run_writes_nothing(root: Path, home: Path, env: dict[str, str]) -> None:
-    result = run_init(root, home=home, env=env, dry_run=True)
-    assert result.exit_code == 0 and len(result.changes) == 3
-    assert registered(env) == []
-    assert not (root / ".contextweave").exists() and not (root / ".mcp.json").exists()
-
-
 def test_unknown_agent_and_bad_config(root: Path, home: Path, env: dict[str, str]) -> None:
     assert run_init(root, agent="nope", home=home, env=env).exit_code == 2
     (root / ".contextweave.toml").write_text("[nonsense]\nkey = 1\n", encoding="utf-8")

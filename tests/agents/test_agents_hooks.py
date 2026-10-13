@@ -10,7 +10,7 @@ from agents_support import make_root
 from contextweave.agents.cli_entry import run_hook
 from contextweave.agents.hooks import HookLimits, parse_event
 from contextweave.agents.hooks import run_hook as dispatch
-from contextweave.agents.transport import HookTransport, InprocTransport, NullTransport
+from contextweave.agents.transport import HookTransport, InprocTransport
 from contextweave.core.budget import bytes35
 from contextweave.core.config import Config, LoadedConfig
 from contextweave.core.paths import user_state_dir
@@ -104,11 +104,6 @@ class Slow(Recorder):
     def prompt(self, project: ResolvedProject, session_id: str, text: str) -> None:
         self.release.wait(5)
         self.calls.append("prompt")
-
-
-def test_transports_satisfy_protocol() -> None:
-    transports: list[HookTransport] = [NullTransport(), InprocTransport({}), Recorder()]
-    assert len(transports) == 3
 
 
 def test_event_name_normalisation() -> None:

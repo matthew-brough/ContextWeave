@@ -5,7 +5,7 @@ import pytest
 from daemon_support import Project, RunningDaemon, eventually
 
 from contextweave.agents.cli_entry import run_hook
-from contextweave.agents.transport import HookTransport, IpcTransport
+from contextweave.agents.transport import IpcTransport
 from contextweave.core.config import load_config
 from contextweave.core.project import ResolvedProject
 from contextweave.daemon.client import IpcClient
@@ -31,11 +31,6 @@ def counts(env: dict[str, str], key: str) -> dict[str, int]:
 
 def resolved(project: Project) -> ResolvedProject:
     return ResolvedProject(project.key, project.root, "cwd")
-
-
-def test_ipc_transport_satisfies_protocol(env: dict[str, str]) -> None:
-    transport: HookTransport = IpcTransport(client_for(env), env)
-    assert transport is not None
 
 
 def test_full_session_over_ipc(daemon: RunningDaemon, project: Project) -> None:

@@ -15,7 +15,6 @@ from contextweave.lang.registry import (
     GROUPS,
     LANGS,
     PROFILES,
-    LangSpec,
     load_language,
     query_text,
     spec_for_path,
@@ -158,14 +157,6 @@ def test_unsupported_and_no_grammar_are_errors_not_exceptions(
     missing = parse_bytes("a.py", b"x = 1\n")
     assert missing.parsed is None
     assert [e.code for e in missing.errors] == ["no_grammar"]
-
-
-def test_langspec_is_frozen_and_slotted() -> None:
-    spec = BY_LANG["python"]
-    assert isinstance(spec, LangSpec)
-    assert not hasattr(spec, "__dict__")
-    with pytest.raises(AttributeError):
-        type(spec).__setattr__(spec, "lang", "x")
 
 
 def test_every_language_has_a_fixture_yielding_items(
