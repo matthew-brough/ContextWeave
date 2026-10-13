@@ -1,3 +1,4 @@
+import shlex
 from pathlib import Path
 
 import pytest
@@ -33,7 +34,8 @@ def test_weights_root_defaults_to_cache(tmp_path: Path) -> None:
 def test_expander_substitutes_local_path(tmp_path: Path) -> None:
     (tmp_path / "model-Q8_0.gguf").write_bytes(b"gguf")
     expand = launch_expander((FILE_REF,), tmp_path)
-    assert expand("llama-server -m {weights}") == f"llama-server -m {tmp_path / 'model-Q8_0.gguf'}"
+    expanded = shlex.split(expand("llama-server -m {weights}"))
+    assert expanded == ["llama-server", "-m", str(tmp_path / "model-Q8_0.gguf")]
 
 
 def test_expander_refuses_missing_weights(tmp_path: Path) -> None:
