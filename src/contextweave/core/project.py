@@ -47,18 +47,36 @@ def _discover(start: Path) -> Path | None:
         return None
 
 
+def _same_dir(left: Path, right: Path) -> bool:
+    try:
+        return left.samefile(right)
+    except OSError:
+        return False
+
+
+def _registered(key: str, root: Path, known: Mapping[str, Path]) -> tuple[str, Path] | None:
+    """The registry entry for root, also when a case-insensitive mount spells it differently."""
+    registered = known.get(key)
+    if registered is not None:
+        return key, registered
+    return next(
+        ((other, path) for other, path in known.items() if _same_dir(path, root)),
+        None,
+    )
+
+
 def _finish(root: Path | None, via: Via, known: Mapping[str, Path]) -> Resolution:
     if root is None:
         return _no_project(known, "root not resolvable")
     key = project_key(root)
-    registered = known.get(key)
-    if registered is None:
+    entry = _registered(key, root, known)
+    if entry is None:
         return ErrorEntry(
             code="not_indexed",
             message=f"project at {root} has no index",
             detail={"hint": "cw init", "key": key, "root": str(root)},
         )
-    return ResolvedProject(key, registered, via)
+    return ResolvedProject(entry[0], entry[1], via)
 
 
 def _from_arg(value: str, cwd: Path | None, known: Mapping[str, Path]) -> Resolution:

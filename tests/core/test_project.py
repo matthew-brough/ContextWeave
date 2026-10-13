@@ -143,6 +143,11 @@ def test_unregistered_root_not_indexed(alpha: Path) -> None:
     assert detail["hint"] == "cw init"
 
 
+def test_root_registered_under_other_spelling(alpha: Path) -> None:
+    resolved = ok(resolve_project({}, [], alpha, {"0123456789ab": alpha}))
+    assert (resolved.key, resolved.root) == ("0123456789ab", alpha)
+
+
 def test_garbage_args_never_raise(alpha: Path) -> None:
     args: dict[str, JSON] = {"project": 5, "path": [1], "ref": "cw://zz", "target": None}
     result = resolve_project(args, [], alpha, known_of(alpha))
