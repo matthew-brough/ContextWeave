@@ -151,6 +151,8 @@ class ServerBackend:
         self._sleep = sleep
         self._startup_timeout_s = startup_timeout_s
         self._handles: dict[Device, ProcessHandle] = {}
+        self._lock = threading.Lock()
+        self._generation = 0
 
     def launches(self, device: Device) -> bool:
         """Whether this backend starts the device's server itself."""
@@ -162,14 +164,21 @@ class ServerBackend:
         server = self._servers.get(device)
         if server is None:
             raise ProviderSlotError(f"{self._slot} has no server for device '{device}'")
-        handle = self._handles.get(device)
-        if server.launch and (handle is None or not handle.alive()):
-            handle = self._launcher.start(self._expand(server.launch))
-            self._handles[device] = handle
+        with self._lock:
+            generation = self._generation
+            handle = self._handles.get(device)
+            if server.launch and (handle is None or not handle.alive()):
+                handle = self._launcher.start(self._expand(server.launch))
+                self._handles[device] = handle
         deadline = self._clock() + (self._startup_timeout_s if server.launch else 0.0)
         while not self._probe(server.endpoint):
+            if self._generation != generation:
+                raise ModelTransportError(
+                    f"{self._slot} {device} start cancelled; servers stopped",
+                    device_tried=str(device),
+                )
             if handle is not None and not handle.alive():
-                self._handles.pop(device, None)
+                self._forget(device, handle)
                 raise ModelTransportError(
                     _with_tail(
                         f"{self._slot} {device} server exited with code {handle.exit_code()}",
@@ -182,8 +191,17 @@ class ServerBackend:
                     self._not_answering(device, server, handle), device_tried=str(device)
                 )
             self._sleep(POLL_INTERVAL_S)
-        for other in [other for other in self._handles if other is not device]:
-            self._handles.pop(other).stop()
+        with self._lock:
+            others = [
+                self._handles.pop(other) for other in list(self._handles) if other is not device
+            ]
+        for other in others:
+            other.stop()
+
+    def _forget(self, device: Device, handle: ProcessHandle) -> None:
+        with self._lock:
+            if self._handles.get(device) is handle:
+                del self._handles[device]
 
     def _not_answering(
         self, device: Device, server: DeviceEndpointConfig, handle: ProcessHandle | None
@@ -198,10 +216,13 @@ class ServerBackend:
         return _with_tail(message, handle) if handle is not None else message
 
     def stop_all(self) -> None:
-        """Stop every supervised process; external endpoints are left alone."""
-        for handle in self._handles.values():
+        """Stop every supervised process and cancel in-flight starts; external endpoints are left alone."""
+        with self._lock:
+            self._generation += 1
+            handles = list(self._handles.values())
+            self._handles.clear()
+        for handle in handles:
             handle.stop()
-        self._handles.clear()
 
 
 def _with_tail(message: str, handle: ProcessHandle) -> str:

@@ -525,6 +525,23 @@ def test_launched_server_that_exits_fails_fast_with_its_stderr(
     assert sleeps == []
 
 
+def test_stop_all_during_warm_stops_the_launch_and_cancels_the_wait(
+    models: ModelsConfig, clock: Clock
+) -> None:
+    launcher = FakeLauncher()
+    backend = ServerBackend(
+        Slot.EMBED,
+        device_table(launched(models.embed.gpu), models.embed.cpu),
+        launcher,
+        lambda endpoint: False,
+        clock=clock,
+        sleep=lambda seconds: backend.stop_all(),
+    )
+    with pytest.raises(ModelTransportError, match="start cancelled"):
+        backend.warm(Device.GPU)
+    assert [handle.running for handle in launcher.started] == [False]
+
+
 def test_external_endpoint_failure_names_the_launch_key(models: ModelsConfig, clock: Clock) -> None:
     backend = ServerBackend(
         Slot.EMBED,
