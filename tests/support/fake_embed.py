@@ -55,9 +55,7 @@ class FakeEmbed:
 
 
 def embed_config(model: str = "fake-a", dim: int = 128) -> EmbedConfig:
-    return EmbedConfig(
-        provider="fake", model=model, dim=dim, query_prefix="", doc_prefix="", memory_prefix=""
-    )
+    return EmbedConfig(provider="fake", model=model, dim=dim, query_prefix="", doc_prefix="")
 
 
 def config_for(embed: EmbedConfig) -> Config:

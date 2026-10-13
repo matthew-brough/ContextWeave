@@ -15,7 +15,7 @@ def test_routing_block_has_markers_and_routes() -> None:
     assert span is not None and span.version == 1
     assert BLOCK.startswith("<!-- contextweave:begin v=1 -->")
     assert BLOCK.endswith("<!-- contextweave:end -->")
-    for name in ("get_symbol", "context_search", "Read", "recall", "remember"):
+    for name in ("get_symbol", "context_search", "Read"):
         assert name in BLOCK
 
 

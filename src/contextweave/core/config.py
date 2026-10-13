@@ -119,7 +119,6 @@ class EmbedConfig:
     dim: int = 1536
     query_prefix: str = "Find the most relevant code snippet given the following query:\n"
     doc_prefix: str = "Candidate code snippet:\n"
-    memory_prefix: str = ""
     query_device: str = "cpu"
     batch_deadline_ms: int = 300000
     parallel: int = 4

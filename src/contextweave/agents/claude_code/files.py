@@ -174,7 +174,7 @@ def routing_skill() -> str:
         "---\n"
         f"name: {SERVER_NAME}-routing\n"
         "description: Route code questions to ContextWeave tools: get_symbol, search_symbols, "
-        "file_outline for named things, context_search for described behaviour, recall and "
-        "remember for project memory. Use when exploring or answering questions about code.\n"
+        "file_outline for named things, context_search for described behaviour. Use when "
+        "exploring or answering questions about code.\n"
         "---\n\n" + body + "\n"
     )

@@ -18,7 +18,6 @@ from contextweave.core.project import ResolvedProject
 from contextweave.core.refs import project_key
 from contextweave.index.indexer import index_project
 from contextweave.index.projects import ProjectRegistry
-from contextweave.memory.capture import remember
 from contextweave.memory.store import MemoryStore, memory_db_path
 
 SESSION = "sess-1"
@@ -147,8 +146,6 @@ def test_inproc_records_full_session(
     with store_of(env, project.key) as store:
         assert count(store, "sessions") == 1
         assert count(store, "prompts") == 1
-        assert count(store, "tool_events") == 1
-        assert count(store, "pending_summaries") == 1
         row: tuple[str] = store.conn.execute("SELECT status FROM sessions").fetchone()
         assert row[0] == "completed"
 
@@ -209,21 +206,12 @@ def test_session_start_injection_is_budgeted_and_scoped(
     tmp_path: Path, root: Path, project: ResolvedProject, env: dict[str, str]
 ) -> None:
     other = make_root(tmp_path, "other")
-    other_key = project_key(other)
     ProjectRegistry(user_state_dir(env)).register(other)
-    with store_of(env, other_key) as theirs:
-        remember(theirs, "decision", "SECRET-OTHER-DECISION", "other reason")
-        remember(theirs, "code_area", "SECRET-OTHER-AREA", path="other.py")
-    with store_of(env, project.key) as mine:
-        for index in range(40):
-            remember(mine, "decision", f"decision {index} " + "word " * 40, "because " * 20)
-            remember(mine, "code_area", "area " * 30, path=f"src/file{index}.py")
     out, code = run_hook("SessionStart", payload(root), env, InprocTransport(env))
     assert code == 0
     text = json.loads(out)["hookSpecificOutput"]["additionalContext"]
     assert bytes35(text) <= 400
-    assert "SECRET-OTHER" not in text
-    assert "Recent decisions:" in text and "decision 39" in text
+    assert project_key(other) not in text
     assert "index:" in text and project.key in text
 
 
@@ -233,8 +221,6 @@ def test_session_start_respects_configured_budget(
     (root / ".contextweave.toml").write_text(
         "[hooks]\nsession_start_tokens = 30\n", encoding="utf-8"
     )
-    with store_of(env, project.key) as mine:
-        remember(mine, "decision", "x " * 100, "y " * 100)
     out, _ = run_hook("SessionStart", payload(root), env, InprocTransport(env))
     assert bytes35(json.loads(out)["hookSpecificOutput"]["additionalContext"]) <= 30
 

@@ -80,7 +80,6 @@ def _card_prefix_line(env: ProbeEnv) -> Line:
     facts = {
         "query_prefix_matches_card": str(query_ok).lower(),
         "doc_prefix_matches_card": str(doc_ok).lower(),
-        "memory_prefix_empty": str(config.memory_prefix == "").lower(),
     }
     if query_ok and doc_ok:
         return Line(
@@ -167,7 +166,7 @@ def _prefix_effect_line(env: ProbeEnv, client: EmbedClient, device: Device) -> L
     variants = {
         "configured": (EmbedKind.QUERY, EmbedKind.DOC),
         "swapped": (EmbedKind.DOC, EmbedKind.QUERY),
-        "memory": (EmbedKind.MEMORY, EmbedKind.MEMORY),
+        "unprefixed": (EmbedKind.PLAIN, EmbedKind.PLAIN),
     }
     scores = attempt(
         lambda: {
@@ -182,11 +181,11 @@ def _prefix_effect_line(env: ProbeEnv, client: EmbedClient, device: Device) -> L
         metrics[f"{name}_top1"] = accuracy
         metrics[f"{name}_margin"] = margin
     configured = scores["configured"][0]
-    best_other = max(scores["swapped"][0], scores["memory"][0])
+    best_other = max(scores["swapped"][0], scores["unprefixed"][0])
     status = Status.OK if configured >= best_other else Status.WARN
     summary = (
         f"top1 configured {configured:.2f}, swapped {scores['swapped'][0]:.2f}, "
-        f"unprefixed {scores['memory'][0]:.2f} over {len(pairs)} pairs"
+        f"unprefixed {scores['unprefixed'][0]:.2f} over {len(pairs)} pairs"
     )
     return Line("embed.prefix_effect", device.value, status, summary, metrics)
 

@@ -33,7 +33,7 @@ class Device(StrEnum):
 class EmbedKind(StrEnum):
     QUERY = "query"
     DOC = "doc"
-    MEMORY = "memory"
+    PLAIN = "plain"
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +118,7 @@ def embed_inputs(config: EmbedConfig, texts: Sequence[str], kind: EmbedKind) -> 
     prefix = {
         EmbedKind.QUERY: config.query_prefix,
         EmbedKind.DOC: config.doc_prefix,
-        EmbedKind.MEMORY: config.memory_prefix,
+        EmbedKind.PLAIN: "",
     }[kind]
     return [f"{prefix}{text}" for text in texts]
 

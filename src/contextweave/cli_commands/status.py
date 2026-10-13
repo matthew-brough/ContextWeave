@@ -12,7 +12,7 @@ from contextweave.memory.savings import savings_summary
 from contextweave.memory.store import MemoryStore, memory_db_path
 
 INDEX_TABLES = ("files", "chunks", "symbols", "imports", "annotations")
-MEMORY_TABLES = ("sessions", "decisions", "code_areas")
+MEMORY_TABLES = ("sessions", "prompts")
 
 
 @dataclass(frozen=True, slots=True)

@@ -194,7 +194,7 @@ and build id for each classify rung tried.
 - T12 `models.embed.query_device`: CPU stays if `embed.query` cpu p50 is within
   250 ms (the probe prints the recommendation); otherwise `gpu` and classify
   must share it. `embed.prefix_effect` and `embed.prefix_vs_card` decide
-  whether `query_prefix`, `doc_prefix` and `memory_prefix` stay as shipped. Also
+  whether `query_prefix` and `doc_prefix` stay as shipped. Also
   confirm `dim` (1536 vs 512) against `embed.doc_batch` throughput and index
   size.
 - T19 `models.annotate.warn_ms` (default 30000, separate from the 1500 ms

@@ -21,7 +21,7 @@ def counts(env: dict[str, str], key: str) -> dict[str, int]:
     store = MemoryStore.open(memory_db_path(key, env), key)
     try:
         result: dict[str, int] = {}
-        for table in ("sessions", "prompts", "tool_events"):
+        for table in ("sessions", "prompts"):
             row: tuple[int] = store.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
             result[table] = row[0]
         return result
@@ -47,9 +47,7 @@ def test_full_session_over_ipc(daemon: RunningDaemon, project: Project) -> None:
     transport.tool_event(target, SESSION, "Edit", "edited alpha", "{}", "{}")
     transport.stop(target, SESSION)
     transport.session_end(target, SESSION, None)
-    assert eventually(
-        lambda: counts(daemon.env, project.key) == {"sessions": 1, "prompts": 1, "tool_events": 1}
-    )
+    assert eventually(lambda: counts(daemon.env, project.key) == {"sessions": 1, "prompts": 1})
 
 
 def test_fails_open_without_daemon(
@@ -101,9 +99,7 @@ def test_cw_hook_entrypoint_uses_ipc_by_default(daemon: RunningDaemon, project: 
     assert "additionalContext" in json.loads(out)["hookSpecificOutput"]
     prompt = json.dumps({**body, "prompt": "why is alpha one"}).encode()
     assert run_hook("UserPromptSubmit", prompt, daemon.env) == (b"", 0)
-    assert eventually(
-        lambda: counts(daemon.env, project.key) == {"sessions": 1, "prompts": 1, "tool_events": 0}
-    )
+    assert eventually(lambda: counts(daemon.env, project.key) == {"sessions": 1, "prompts": 1})
 
 
 def test_daemon_status_lists_model_slots(daemon: RunningDaemon) -> None:

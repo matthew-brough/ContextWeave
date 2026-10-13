@@ -7,7 +7,7 @@ from contextweave.core.config import AnnotateConfig, EmbedConfig, ModelsConfig
 @pytest.fixture
 def models() -> ModelsConfig:
     return ModelsConfig(
-        embed=EmbedConfig(dim=3, query_prefix="Q:", doc_prefix="D:", memory_prefix="M:"),
+        embed=EmbedConfig(dim=3, query_prefix="Q:", doc_prefix="D:"),
         annotate=AnnotateConfig(think=True),
     )
 

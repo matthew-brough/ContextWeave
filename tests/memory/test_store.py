@@ -2,31 +2,17 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from conftest import KEY_A, KEY_B
+from conftest import KEY_A
 
-from contextweave.memory.capture import remember
 from contextweave.memory.store import (
     SCHEMA_VERSION,
     MemorySchemaError,
     MemoryStore,
     memory_db_path,
-    project_memory_dbs,
     state_dir,
 )
 
-TABLES = [
-    "sessions",
-    "prompts",
-    "tool_events",
-    "tool_event_payloads",
-    "turn_summaries",
-    "decisions",
-    "code_areas",
-    "notes",
-    "savings_log",
-    "vectors_meta",
-    "pending_summaries",
-]
+TABLES = ["sessions", "prompts", "savings_log"]
 
 
 def test_state_dir_honours_xdg_and_falls_back_to_home() -> None:
@@ -49,7 +35,6 @@ def test_wal_and_user_version(store_a: MemoryStore) -> None:
     mode = store_a.conn.execute("PRAGMA journal_mode").fetchone()[0]
     assert mode == "wal"
     assert store_a.user_version() == SCHEMA_VERSION
-    assert store_a.vec_enabled
 
 
 def test_unknown_schema_version_raises(tmp_path: Path) -> None:
@@ -64,16 +49,33 @@ def test_unknown_schema_version_raises(tmp_path: Path) -> None:
 def test_reopen_is_idempotent(state_env: dict[str, str]) -> None:
     path = memory_db_path(KEY_A, state_env)
     first = MemoryStore.open(path, KEY_A)
-    remember(first, "note", "keep me")
+    first.add_prompt("s1", "keep me")
     first.close()
     second = MemoryStore.open(path, KEY_A)
-    assert second.fts_ranked("note", '"keep"', 5) == [1]
+    assert second.current_prompt_number("s1") == 1
     second.close()
 
 
-def test_project_dbs_listed_sorted(
-    state_env: dict[str, str], store_a: MemoryStore, store_b: MemoryStore
-) -> None:
-    keys = [key for key, _ in project_memory_dbs(state_env)]
-    assert keys == [KEY_A, KEY_B]
-    assert project_memory_dbs({"XDG_STATE_HOME": "/nonexistent-cw"}) == []
+def test_retired_schema_drops_recall_tables(tmp_path: Path) -> None:
+    path = tmp_path / "memory.db"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE decisions (id INTEGER PRIMARY KEY, project_key TEXT)")
+    conn.execute("CREATE VIRTUAL TABLE notes_fts USING fts5(text)")
+    conn.execute(
+        "CREATE TABLE prompts (id INTEGER PRIMARY KEY AUTOINCREMENT, project_key TEXT NOT NULL, session_id TEXT NOT NULL, prompt_number INTEGER NOT NULL, prompt_text TEXT NOT NULL, created_at_epoch INTEGER NOT NULL)"
+    )
+    conn.execute("INSERT INTO prompts VALUES (1, ?, 's1', 1, 'kept', 0)", (KEY_A,))
+    conn.execute("PRAGMA user_version = 1")
+    conn.commit()
+    conn.close()
+    store = MemoryStore.open(path, KEY_A)
+    try:
+        names = {
+            row[0]
+            for row in store.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert names == {"sessions", "prompts", "savings_log", "sqlite_sequence"}
+        assert store.user_version() == SCHEMA_VERSION
+        assert store.current_prompt_epoch("s1") == 0
+    finally:
+        store.close()

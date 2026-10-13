@@ -248,7 +248,7 @@ def test_embed_prefix_line_matches_card_by_default() -> None:
 def test_embed_prefix_effect_reports_variants() -> None:
     report = probe_fakes(StepClock(), slots=(Slot.EMBED,))
     effect = next(iter(by_probe(report.lines, "embed.prefix_effect").values()))
-    assert {"configured_top1", "swapped_top1", "memory_top1"} <= set(effect.metrics)
+    assert {"configured_top1", "swapped_top1", "unprefixed_top1"} <= set(effect.metrics)
 
 
 def test_device_failure_marks_only_that_line_unavailable() -> None:

@@ -46,8 +46,7 @@ Record the `via` value of checks 1 and 2:
 
 ## Hooks
 
-Codex hook support is not assumed. `cw init --agent codex` installs none; memory
-works through the `recall` / `remember` tools only. If your Codex version
+Codex hook support is not assumed. `cw init --agent codex` installs none. If your Codex version
 exposes lifecycle hooks, note the event names and payload shape here.
 
 ## Teardown

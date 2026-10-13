@@ -11,13 +11,6 @@ from contextweave.daemon.client import DaemonUnavailable, IpcClient, RemoteError
 from contextweave.daemon.lifecycle import spawn_detached
 from contextweave.feedback.capture import capture_tool_feedback
 from contextweave.index.store import Store
-from contextweave.memory.capture import (
-    end_session,
-    enqueue_turn_summary,
-    record_prompt,
-    record_tool_event,
-    start_session,
-)
 from contextweave.memory.store import MemoryStore, memory_db_path
 
 HEALTH_UNBUILT = "index: not built yet (run cw init)"
@@ -111,7 +104,7 @@ class InprocTransport:
         self, project: ResolvedProject, session_id: str, loaded: LoadedConfig
     ) -> str | None:
         with self._store(project) as store:
-            start_session(store, session_id)
+            store.ensure_session(session_id)
             warnings = [
                 f"warning: config_invalid key {issue.key} in {issue.file}"
                 for issue in loaded.issues
@@ -122,14 +115,12 @@ class InprocTransport:
                 title=f"ContextWeave project {project.root.name} ({project.key})",
                 health=index_health(project.root),
                 warnings=warnings,
-                decisions=store.recent("decision", 5),
-                code_areas=store.recent("code_area", 5),
                 limit_tokens=loaded.config.hooks.session_start_tokens,
             )
 
     def prompt(self, project: ResolvedProject, session_id: str, text: str) -> None:
         with self._store(project) as store:
-            record_prompt(store, session_id, text)
+            store.add_prompt(session_id, text)
 
     def tool_event(
         self,
@@ -141,26 +132,14 @@ class InprocTransport:
         raw_output: str,
     ) -> None:
         with self._store(project) as store:
-            record_tool_event(
-                store,
-                session_id,
-                store.current_prompt_number(session_id),
-                tool_name,
-                summary=summary,
-                raw_input=raw_input,
-                raw_output=raw_output,
-            )
             capture_tool_feedback(project.root, store, session_id, tool_name, raw_input)
 
     def stop(self, project: ResolvedProject, session_id: str) -> None:
-        with self._store(project) as store:
-            number = store.current_prompt_number(session_id)
-            if number > 0:
-                enqueue_turn_summary(store, session_id, number)
+        return None
 
     def session_end(self, project: ResolvedProject, session_id: str, reason: str | None) -> None:
         with self._store(project) as store:
-            end_session(store, session_id, "completed", reason)
+            store.end_session(session_id, "completed", reason)
 
 
 HOOK_TIMEOUT_S = 0.2

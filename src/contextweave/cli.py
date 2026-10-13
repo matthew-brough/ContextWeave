@@ -17,7 +17,6 @@ from contextweave.cli_commands import (
     languages,
     models_cmd,
     projects,
-    recall,
     savings,
     search,
     status,
@@ -72,7 +71,6 @@ def build_parser() -> argparse.ArgumentParser:
     index_cmd.add_parser(commands)
     status.add_parser(commands)
     search.add_parser(commands)
-    recall.add_parser(commands)
     savings.add_parser(commands)
     config_show.add_parser(commands)
     languages.add_parser(commands)
@@ -175,8 +173,6 @@ def _dispatch(args: argparse.Namespace, ctx: CommandContext) -> int:
             return status.run(args.as_json, ctx)
         case "search":
             return search.run(args, ctx)
-        case "recall":
-            return recall.run(args, ctx)
         case "savings":
             return savings.run(args, ctx)
         case "config":

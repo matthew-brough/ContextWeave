@@ -66,8 +66,8 @@ def test_embed_kinds_use_their_prefix(models: ModelsConfig) -> None:
     rec = recorder(lambda r: ok(embeddings([1.0, 0.0, 0.0])))
     client = LlamaEmbed(ctx_of(models, rec))
     client.embed(["a"], kind=EmbedKind.DOC)
-    client.embed(["a"], kind=EmbedKind.MEMORY)
-    assert [b["input"] for b in rec.bodies()] == [["D:a"], ["M:a"]]
+    client.embed(["a"], kind=EmbedKind.PLAIN)
+    assert [b["input"] for b in rec.bodies()] == [["D:a"], ["a"]]
 
 
 def test_embed_short_vector_is_error(models: ModelsConfig) -> None:

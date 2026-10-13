@@ -14,10 +14,4 @@ Route on what you can name.
 Do not read a whole file to answer a question about its shape. A tool that
 reports a size cap or finds nothing is an answer; say so instead of falling
 back to a bulk read.
-
-Memory loop:
-
-- `recall` with a topic phrase before answering a design question or a "why did we".
-- `remember` after a choice you would not want re-litigated: a decision with its
-  reason, or a code area with its path.
 <!-- contextweave:end -->
