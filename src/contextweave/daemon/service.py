@@ -3,11 +3,11 @@ import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from importlib.metadata import version
 from pathlib import Path
 
 from contextweave.agents.transport import InprocTransport
 from contextweave.core.config import Config, load_config
+from contextweave.core.dist import package_version
 from contextweave.core.paths import user_state_dir
 from contextweave.core.project import ResolvedProject, Via, resolve_project
 from contextweave.core.registry import Registry, UnknownKeyError
@@ -201,7 +201,7 @@ class DaemonService:
 
 @method("ping")
 def _ping(service: DaemonService, params: Params) -> JSON:
-    return {"pid": os.getpid(), "version": version("contextweave")}
+    return {"pid": os.getpid(), "version": package_version()}
 
 
 @method("status")
@@ -243,7 +243,7 @@ def _status(service: DaemonService, params: Params) -> JSON:
             )
     return {
         "pid": os.getpid(),
-        "version": version("contextweave"),
+        "version": package_version(),
         "uptime_s": round(time.time() - service.started_at, 3),
         "queue": service.scheduler.pending(),
         "profile": profile.value if profile is not None else None,

@@ -1,5 +1,4 @@
 from collections.abc import Mapping
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from contextweave.agents.base import AgentConfigError, HookSpec
@@ -13,6 +12,7 @@ from contextweave.agents.jsonio import (
     parse_object,
 )
 from contextweave.agents.routing import routing_block
+from contextweave.core.dist import package_version
 from contextweave.core.types import JSON
 
 SERVER_NAME = "contextweave"
@@ -151,13 +151,9 @@ def unmerge_hooks(text: str, path: Path, specs: Mapping[str, HookSpec]) -> str |
 
 def plugin_manifest() -> JSONObject:
     """The .claude-plugin/plugin.json document."""
-    try:
-        release = version("contextweave")
-    except PackageNotFoundError:
-        release = "0.0.0"
     return {
         "name": SERVER_NAME,
-        "version": release,
+        "version": package_version(),
         "description": "ContextWeave code retrieval and session memory",
     }
 

@@ -3,32 +3,84 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and check only — do not upload to PyPI"
+        type: boolean
+        default: true
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.14"
+
+      - name: Tag matches the packaged version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python - <<'PY'
+          import os, sys, tomllib
+          tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          with open("pyproject.toml", "rb") as handle:
+              version = tomllib.load(handle)["project"]["version"]
+          if tag != version:
+              sys.exit(f"tag {tag!r} != pyproject version {version!r}")
+          print(f"releasing {version}")
+          PY
+
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pyright
       - run: uv run pytest
+
       - run: uv build
 
+      - name: Installed console script runs
+        run: |
+          uv tool install ./dist/*.whl
+          cw --version
+          cw languages
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: dist
+          path: dist/
+
   publish:
-    needs: build-and-test
+    needs: build
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') && !inputs.dry_run
     environment: pypi
     permissions:
+      # Trusted publishing: no API token in the repo. The publisher is configured at
+      # https://pypi.org/manage/project/contextweave-mcp/settings/publishing/
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/download-artifact@v5
         with:
-          python-version: "3.14"
-      - run: uv build
-      - uses: pypa/gh-action-pypi-publish@release/v1
+          name: dist
+          path: dist/
+      - uses: astral-sh/setup-uv@v6
+      - run: uv publish --trusted-publishing always
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: dist
+          path: dist/
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes

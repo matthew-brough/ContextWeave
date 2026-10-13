@@ -4,15 +4,22 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.14"
+          enable-cache: true
+          cache-suffix: linux
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
@@ -22,9 +29,34 @@ jobs:
   windows-inproc-smoke:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.14"
+          enable-cache: true
+          cache-suffix: windows
       - run: uv sync --locked
       - run: uv run pytest -m "not daemon"
+
+  package:
+    # Package data (queries, prompts, schema) lives outside the .py files, so the
+    # built wheel has to be installed and run, not just imported.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+      - run: uv build
+      - name: Installed console script indexes a project
+        run: |
+          uv tool install ./dist/*.whl
+          cw --version
+          cw languages
+          mkdir -p /tmp/probe/src
+          printf 'def hello(name):\n    return name\n' > /tmp/probe/src/app.py
+          cd /tmp/probe && cw init --agent none && cw status
+      - uses: actions/upload-artifact@v5
+        with:
+          name: dist
+          path: dist/

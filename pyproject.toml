@@ -1,10 +1,13 @@
 [project]
-name = "contextweave"
-version = "0.1.0"
+name = "contextweave-mcp"
+version = "0.2.0"
 description = "Unified code-context MCP server: structural, lexical and semantic retrieval"
 readme = "README.md"
 requires-python = ">=3.14"
-authors = [{name = "artemOP"}]
+license = "MPL-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "artemOP", email = "matthew.brough123890@gmail.com" }]
+keywords = ["mcp", "tree-sitter", "code-search", "retrieval", "embeddings", "claude", "codex", "llm"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -16,6 +19,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Text Processing :: Indexing",
     "Topic :: Utilities",
+    "Typing :: Typed",
 ]
 dependencies = [
     "httpx>=0.28.1",
@@ -30,6 +34,11 @@ dependencies = [
     "tree-sitter-language-pack>=1.21.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/matthew-brough/ContextWeave"
+Repository = "https://github.com/matthew-brough/ContextWeave"
+Issues = "https://github.com/matthew-brough/ContextWeave/issues"
+
 [project.scripts]
 contextweave = "contextweave.cli:main"
 cw = "contextweave.cli:main"
@@ -37,6 +46,9 @@ cw = "contextweave.cli:main"
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "contextweave"
 
 [dependency-groups]
 dev = [

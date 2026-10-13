@@ -3,7 +3,6 @@ import json
 import os
 import sys
 from collections.abc import Mapping, Sequence
-from importlib.metadata import version
 from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
@@ -24,6 +23,7 @@ from contextweave.cli_commands import (
 )
 from contextweave.cli_commands.common import CommandContext
 from contextweave.core.config import load_config
+from contextweave.core.dist import package_version
 from contextweave.core.paths import user_state_dir
 from contextweave.core.types import JSON
 from contextweave.daemon.client import DaemonUnavailable, RemoteError
@@ -53,7 +53,7 @@ EXIT_USAGE = 2
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level `cw` argument parser."""
     parser = argparse.ArgumentParser(prog="cw", description="ContextWeave code-context server")
-    parser.add_argument("--version", action="version", version=version("contextweave"))
+    parser.add_argument("--version", action="version", version=package_version())
     commands = parser.add_subparsers(dest="command")
     serve = commands.add_parser("serve", help="Run the MCP server over stdio")
     serve.add_argument("--inproc", action="store_true", help="Serve from this process, no daemon")
