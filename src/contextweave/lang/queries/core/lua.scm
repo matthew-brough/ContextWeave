@@ -14,7 +14,7 @@
 ; The callee is pinned to a plain identifier and the string to the first
 ; argument, which keeps ordinary callbacks (`MySQL.query("q", {}, fn)`) out.
 ; A concatenated name (`"WDS:HB:"..GetCurrentResourceName()`) is dynamic and is
-; deliberately not matched: half a literal would be a fake symbol (§V.13).
+; deliberately not matched: half a literal would be a fake symbol.
 (function_call
   name: (identifier) @handler.registrar
   arguments: (arguments

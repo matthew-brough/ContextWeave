@@ -27,7 +27,7 @@
 ;   RegisterCommand("name", ...), exports("name", ...)
 ; The callee is pinned to a plain identifier, so `emitter.on("x", fn)` and
 ; `socket.on("x", fn)` stay out. The string is the only name the function has.
-; A concatenated or templated name is dynamic and is not matched (§V.15).
+; A concatenated or templated name is dynamic and is not matched.
 (call_expression
   function: (identifier) @handler.registrar
   arguments: (arguments

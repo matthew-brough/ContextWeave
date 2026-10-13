@@ -38,7 +38,7 @@ def final_of(cand: Candidate) -> float:
 
 
 class GatePassTwo(Protocol):
-    """Gate pass 2: scores freshly reached chunks, the slot a classifier fills (T20)."""
+    """Gate pass 2: scores freshly reached chunks, the slot a classifier fills."""
 
     def __call__(self, ctx: QueryContext, expanded: Sequence[Expanded]) -> list[Candidate]: ...
 

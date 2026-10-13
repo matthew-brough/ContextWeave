@@ -97,7 +97,7 @@ def _int(row: Row, index: int) -> int:
 
 
 class MemoryStore:
-    """Per-project memory.db; every statement is filtered by project_key (§V.13)."""
+    """Per-project memory.db; every statement is filtered by project_key."""
 
     def __init__(
         self,
