@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from contextweave.core.config import EmbedConfig
 from contextweave.core.types import JSON
-from contextweave.models.errors import ModelResponseError, ProviderSlotError
+from contextweave.models.errors import ModelParseError, ModelResponseError, ProviderSlotError
 from contextweave.models.http import JsonClient
 from contextweave.models.providers import (
     DEFAULT_SEED,
@@ -85,6 +85,8 @@ def parse_chat(reply: Mapping[str, JSON], json_schema: Mapping[str, JSON]) -> di
     if not choices:
         raise ModelResponseError("no choices returned")
     first = as_object(choices[0], "choice")
+    if first.get("finish_reason") == "length":
+        raise ModelParseError("structured output truncated at max_output_tokens")
     message = as_object(field(first, "message", "choice"), "message")
     content = as_str(field(message, "content", "message"), "content")
     if not content:

@@ -109,6 +109,13 @@ def test_annotate_parse_failure_is_typed(models: ModelsConfig, content: str) -> 
         LlamaAnnotate(ctx_of(models, rec)).annotate(MESSAGES, SCHEMA)
 
 
+def test_annotate_truncated_output_names_the_token_cap(models: ModelsConfig) -> None:
+    choice = {"finish_reason": "length", "message": {"content": '{"purpose": "p", "tags": ["a'}}
+    rec = recorder(lambda r: ok({"choices": [choice]}))
+    with pytest.raises(ModelParseError, match="max_output_tokens"):
+        LlamaAnnotate(ctx_of(models, rec)).annotate(MESSAGES, SCHEMA)
+
+
 def test_llama_set_device_switches_server_without_requests(models: ModelsConfig) -> None:
     rec = recorder(lambda r: ok(embeddings([1.0, 0.0, 0.0])))
     client = LlamaEmbed(ctx_of(models, rec))
