@@ -1,8 +1,13 @@
-from collections.abc import Mapping, Sequence
+import shlex
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
+from pathlib import PurePath
 
+from contextweave.core.config import EmbedConfig
 from contextweave.core.types import JSON
 from contextweave.models.device_http import DeviceHttp, device_table
+from contextweave.models.errors import ModelTransportError
 from contextweave.models.openai_compat import CHAT_PATH, chat_body, embed_over, parse_chat
 from contextweave.models.providers import (
     DEFAULT_SEED,
@@ -12,6 +17,48 @@ from contextweave.models.providers import (
     EmbedKind,
     Message,
 )
+
+SERVER_BINARY = "llama-server"
+UBATCH_FLAGS = ("-ub", "--ubatch-size")
+BATCH_FLAGS = ("-b", "--batch-size")
+DEFAULT_UBATCH = 512
+DEFAULT_BATCH = 2048
+
+
+def _flag(argv: Sequence[str], names: Sequence[str], default: int) -> int:
+    for flag, value in pairwise(argv):
+        if flag in names and value.isdigit():
+            return int(value)
+    return default
+
+
+def embed_launch_values(config: EmbedConfig) -> Mapping[str, str]:
+    """Launch placeholders that tie the embed server's sizing to the client's input cap."""
+    return {
+        "max_input_tokens": str(config.max_input_tokens),
+        "ctx": str(config.max_input_tokens * max(config.parallel, 1)),
+    }
+
+
+def guard_ubatch(expand: Callable[[str], str], config: EmbedConfig) -> Callable[[str], str]:
+    """Refuse a llama-server embed launch whose physical batch cannot hold one max_input_tokens input."""
+
+    def guarded(command: str) -> str:
+        expanded = expand(command)
+        argv = shlex.split(expanded)
+        if not any(PurePath(arg).name == SERVER_BINARY for arg in argv):
+            return expanded
+        ubatch = min(
+            _flag(argv, UBATCH_FLAGS, DEFAULT_UBATCH), _flag(argv, BATCH_FLAGS, DEFAULT_BATCH)
+        )
+        if ubatch < config.max_input_tokens:
+            raise ModelTransportError(
+                f"embed launch batch {ubatch} < models.embed.max_input_tokens "
+                f"{config.max_input_tokens}; use -b {{max_input_tokens}} -ub {{max_input_tokens}}"
+            )
+        return expanded
+
+    return guarded
 
 
 @dataclass(frozen=True, slots=True)

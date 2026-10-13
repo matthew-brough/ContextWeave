@@ -5,7 +5,7 @@ import httpx
 import pytest
 from models_support import Recorder, recorder, transport_of
 
-from contextweave.core.config import ModelsConfig
+from contextweave.core.config import EmbedConfig, ModelsConfig
 from contextweave.core.types import JSON
 from contextweave.models.decision import (
     NullDecisionClient,
@@ -22,7 +22,12 @@ from contextweave.models.errors import (
     ModelTransportError,
     ProviderSlotError,
 )
-from contextweave.models.llama_server import LlamaAnnotate, LlamaEmbed
+from contextweave.models.llama_server import (
+    LlamaAnnotate,
+    LlamaEmbed,
+    embed_launch_values,
+    guard_ubatch,
+)
 from contextweave.models.null import NullAnnotate, NullEmbed
 from contextweave.models.openai_compat import OpenAIAnnotate, OpenAIEmbed
 from contextweave.models.prompt_store import PromptError, load_prompt
@@ -239,3 +244,29 @@ def test_annotate_prompt_loads_and_renders() -> None:
     assert prompt.schema["required"] == ["purpose", "tags"]
     with pytest.raises(PromptError):
         load_prompt("annotate", 2)
+
+
+def test_embed_launch_values_size_the_server_from_the_input_cap() -> None:
+    config = EmbedConfig(max_input_tokens=2048, parallel=4)
+    assert embed_launch_values(config) == {"max_input_tokens": "2048", "ctx": "8192"}
+
+
+@pytest.mark.parametrize(
+    ("command", "ok"),
+    [
+        ("llama-server -b 2048 -ub 2048", True),
+        ("llama-server --batch-size 4096 --ubatch-size 4096", True),
+        ("llama-server -b 2048 -ub 1024", False),
+        ("llama-server -b 1024 -ub 2048", False),
+        ("llama-server", False),
+        ("taskset -c 0-7 /opt/llama/llama-server -ub 512", False),
+        ("python -m kev.serve", True),
+    ],
+)
+def test_ubatch_guard_refuses_a_batch_below_the_input_cap(command: str, ok: bool) -> None:
+    guarded = guard_ubatch(lambda text: text, EmbedConfig(max_input_tokens=2048))
+    if ok:
+        assert guarded(command) == command
+    else:
+        with pytest.raises(ModelTransportError, match="max_input_tokens"):
+            guarded(command)

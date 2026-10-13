@@ -63,3 +63,8 @@ def test_ensure_weights_reports_bad_ref(tmp_path: Path) -> None:
     models = ModelsConfig(weights_dir=str(tmp_path), embed=EmbedConfig(weights=("nope",)))
     [result] = ensure_weights(models, {})
     assert result.error is not None and "org/repo" in result.error
+
+
+def test_expander_fills_named_values(tmp_path: Path) -> None:
+    expand = launch_expander((), tmp_path, {"max_input_tokens": "2048", "ctx": "8192"})
+    assert expand("srv -ub {max_input_tokens} -c {ctx}") == "srv -ub 2048 -c 8192"

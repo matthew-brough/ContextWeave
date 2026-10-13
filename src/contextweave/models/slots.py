@@ -28,7 +28,12 @@ from contextweave.models.errors import (
     ProviderSlotError,
 )
 from contextweave.models.health import Clock, HealthStatus, SlotHealth, Submit
-from contextweave.models.llama_server import build_llama_annotate, build_llama_embed
+from contextweave.models.llama_server import (
+    build_llama_annotate,
+    build_llama_embed,
+    embed_launch_values,
+    guard_ubatch,
+)
 from contextweave.models.null import NONE_CHAIN, build_null_annotate, build_null_embed
 from contextweave.models.openai_compat import build_openai_annotate, build_openai_embed
 from contextweave.models.providers import (
@@ -163,9 +168,16 @@ class ModelSlots:
             Slot.CLASSIFY: decision,
         }
         root = weights_root(models, os.environ if env is None else env)
+        weights = slot_weights(models)
         expanders = {
-            slot: launch_expander(refs, root) for slot, refs in slot_weights(models).items()
+            Slot.EMBED: launch_expander(
+                weights[Slot.EMBED], root, embed_launch_values(models.embed)
+            ),
+            Slot.ANNOTATE: launch_expander(weights[Slot.ANNOTATE], root),
+            Slot.CLASSIFY: launch_expander(weights[Slot.CLASSIFY], root),
         }
+        if models.embed.provider == LLAMA_SERVER:
+            expanders[Slot.EMBED] = guard_ubatch(expanders[Slot.EMBED], models.embed)
         backends = _backends(
             providers,
             launcher or SubprocessLauncher(),

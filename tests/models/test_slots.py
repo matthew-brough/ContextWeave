@@ -505,7 +505,7 @@ class CrashingLauncher(FakeLauncher):
 
 
 def launched(config: DeviceEndpointConfig) -> DeviceEndpointConfig:
-    return dataclasses.replace(config, launch="llama-server --port 8770")
+    return dataclasses.replace(config, launch="llama-server -b 8192 -ub 8192 --port 8770")
 
 
 def test_launched_server_that_exits_fails_fast_with_its_stderr(
@@ -565,7 +565,7 @@ def test_launch_expands_before_start(models: ModelsConfig, clock: Clock) -> None
         expand=lambda command: f"{command} -m /w.gguf",
     )
     backend.warm(Device.GPU)
-    assert launcher.started[0].command == "llama-server --port 8770 -m /w.gguf"
+    assert launcher.started[0].command == "llama-server -b 8192 -ub 8192 --port 8770 -m /w.gguf"
 
 
 def test_start_failure_shows_in_status_reason(models: ModelsConfig, clock: Clock) -> None:

@@ -69,10 +69,14 @@ def fetch(ref: WeightRef, root: Path) -> Path:
     return Path(snapshot_download(ref.repo))
 
 
-def launch_expander(refs: Sequence[str], root: Path) -> Callable[[str], str]:
-    """Expand {weights} in a launch command to the first entry's local path; refuse when any is missing."""
+def launch_expander(
+    refs: Sequence[str], root: Path, values: Mapping[str, str] | None = None
+) -> Callable[[str], str]:
+    """Expand {weights} to the first entry's local path and each {name} in values; refuse when weights are missing."""
 
     def expand(command: str) -> str:
+        for name, value in (values or {}).items():
+            command = command.replace(f"{{{name}}}", value)
         paths: list[Path] = []
         for raw in refs:
             ref = WeightRef.parse(raw)

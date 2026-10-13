@@ -34,7 +34,6 @@ from contextweave.models.slots import ModelSlots, Skipped
 
 STAGE = "embed"
 DEFAULT_BATCH = 16
-DEFAULT_MAX_INPUT_TOKENS = 8192
 SERVER_RESERVED_TOKENS = 1
 WRITE_ROWS = 256
 OVERSIZE = "#parts"
@@ -378,7 +377,7 @@ def embed_project(
     tokenizer: ChunkTokenizer | None = None,
     batch_size: int = DEFAULT_BATCH,
     max_chunks: int | None = None,
-    max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS,
+    max_input_tokens: int | None = None,
     on_progress: ProgressSink = discard,
 ) -> EmbedReport:
     """Embed chunks lacking a current vector; doubles as the background space rebuild job.
@@ -395,7 +394,12 @@ def embed_project(
     tally = _Tally()
     pace = _Pace(
         counter,
-        max(max_input_tokens - SERVER_RESERVED_TOKENS - counter.count(embed_config.doc_prefix), 1),
+        max(
+            (max_input_tokens or embed_config.max_input_tokens)
+            - SERVER_RESERVED_TOKENS
+            - counter.count(embed_config.doc_prefix),
+            1,
+        ),
         batch_size,
         max(embed_config.parallel, 1),
     )
