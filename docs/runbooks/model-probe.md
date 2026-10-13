@@ -33,7 +33,7 @@ slot uses is the endpoint its calls go to.
 
 | slot | device | command |
 |---|---|---|
-| embed | gpu | `llama-server -hf jinaai/jina-code-embeddings-1.5b-GGUF:Q8_0 --embeddings --pooling last -c 32768 -np 4 -b 8192 -ub 8192 -ngl 99 --cache-ram 0 --port 8770` |
+| embed | gpu | `llama-server -hf jinaai/jina-code-embeddings-1.5b-GGUF:Q8_0 --embeddings --pooling last -c 8192 -np 4 -b 2048 -ub 2048 -ngl 99 --cache-ram 0 --port 8770` |
 | embed | cpu | same, `-ngl 0 --port 8771` |
 | annotate | gpu | `llama-server -hf unsloth/Qwen3.5-4B-GGUF:Q4_K_M --jinja -c 32768 -np 4 -ngl 99 --cache-ram 0 --port 8772` |
 | annotate | cpu | same, `-ngl 0 --port 8773` |
@@ -47,9 +47,11 @@ GPU memory, leaving room for a GPU embed server alongside it.
   `embed.pooling` line catches a server started without it.
 - Pass `--cache-ram 0`. The default host prompt cache is 8 GiB per server and every
   chunk is unique, so it only fills RAM (two servers reached ~20 GB under WSL2).
-- Embed needs `-ub` >= the per-slot context (8192) so one doc fits a single ubatch, and
-  `-c` = slots × 8192. With `-c 8192` the slots share one cache and a doc batch fails with
-  a 500 "Context size has been exceeded" that marks the device down.
+- Embed needs `-b`/`-ub` >= `models.embed.max_input_tokens` (2048) so one doc fits a single
+  ubatch, and `-c` = slots × 2048. In a supervised `launch` use `-c {ctx} -b {max_input_tokens}
+  -ub {max_input_tokens}`; the daemon refuses a llama-server launch whose batch is below the
+  cap. With a shared `-c` a doc batch fails with a 500 "Context size has been exceeded" that
+  marks the device down.
 - Annotate `-np` should equal `models.annotate.parallel` (4), with `-c` = slots × 8192.
   With a smaller `-c` all slots share one KV cache and concurrent chunks fail with
   "Context size has been exceeded".

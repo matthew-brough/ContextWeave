@@ -104,12 +104,14 @@ weights_dir = "~/models"  # single-file weights; default ~/.cache/contextweave/m
 
 [models.embed]
 weights = ["jinaai/jina-code-embeddings-1.5b-GGUF/jina-code-embeddings-1.5b-Q8_0.gguf"]
-gpu = { endpoint = "http://127.0.0.1:8770", launch = "llama-server -m {weights} --embeddings --pooling last -ngl 99 --port 8770" }
+gpu = { endpoint = "http://127.0.0.1:8770", launch = "llama-server -m {weights} --embeddings --pooling last -c {ctx} -np 4 -b {max_input_tokens} -ub {max_input_tokens} -ngl 99 --port 8770" }
 ```
 
 A `weights` entry is `org/repo/file` (one file into `weights_dir`) or `org/repo`
 (whole repo into the Hugging Face cache). `{weights}` in `launch` expands to the
-first entry's local path. One GPU rarely holds every model, so the daemon keeps
+first entry's local path. Embed launches also get `{max_input_tokens}`
+(`models.embed.max_input_tokens`, default 2048) and `{ctx}` (that × `parallel`); a
+llama-server embed launch with `-ub` below the cap is refused. One GPU rarely holds every model, so the daemon keeps
 a residency profile: during bulk indexing annotate and embed each get the GPU
 alone in turn, and while serving the classifier holds the GPU with embed and
 annotate on CPU. Server output is discarded, but when a start fails the last

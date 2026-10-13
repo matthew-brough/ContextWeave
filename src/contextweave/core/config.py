@@ -122,7 +122,7 @@ class EmbedConfig:
     query_device: str = "cpu"
     batch_deadline_ms: int = 300000
     parallel: int = 4
-    max_input_tokens: int = 8192
+    max_input_tokens: int = 2048
     devices: tuple[str, ...] = ("gpu", "cpu")
     weights: tuple[str, ...] = ()
     gpu: DeviceEndpointConfig = field(default_factory=_local(8770))
