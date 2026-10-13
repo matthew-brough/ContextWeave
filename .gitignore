@@ -19,3 +19,18 @@ wheels/
 
 # AST_MCP symbol index
 .ast_mcp/
+
+# Tool caches
+.hypothesis/
+.pytest_cache/
+.ruff_cache/
+
+# Local agent wiring (machine-specific paths)
+.claude/
+CLAUDE.md
+AGENTS.md
+
+# Local design notes and benchmark output
+docs/SPECS/
+docs/artifacts/
+docs/results/
