@@ -1,6 +1,6 @@
 # Codex end-to-end check (manual)
 
-Verifies SPEC T23 / I.project: one global Codex registration, project resolved
+Verifies one global Codex registration, project resolved
 per call. Automated simulation: `tests/agents/test_agents_codex_e2e.py`. This
 runbook covers what only a real Codex install shows: which resolver steps the
 client actually supplies.
@@ -42,7 +42,7 @@ Record the `via` value of checks 1 and 2:
 - `roots`: Codex answers `roots/list` (step 3).
 - A wrong project in 1 or 2 means Codex spawned the server once with a fixed
   cwd. Then the `project` arg is the only route: add it to the AGENTS.md block
-  and note the finding in SPEC I.project.
+  and note the finding in the issue tracker.
 
 ## Hooks
 

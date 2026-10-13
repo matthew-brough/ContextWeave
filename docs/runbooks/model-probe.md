@@ -1,8 +1,8 @@
-# Model probe runbook (T10)
+# Model probe runbook
 
 `cw models probe` measures the three model slots on the machine it runs on and
-produces the numbers that decide the T12 embed defaults, the T19 annotate
-deadline and the T20 classify build. The probe never downloads, pulls, creates
+produces the numbers that decide the embed defaults, the annotate
+deadline and the classify build. The probe never downloads, pulls, creates
 or deletes a model. It reads `GET /v1/models` from each configured
 llama-server and calls the embed / chat / `/v1/systemone` endpoints of models
 you already serve. An unreachable server is reported as `unavailable` with
@@ -52,12 +52,12 @@ GPU memory, leaving room for a GPU embed server alongside it.
   a 500 "Context size has been exceeded" that marks the device down.
 - Annotate `-np` should equal `models.annotate.parallel` (4), with `-c` = slots × 8192.
   With a smaller `-c` all slots share one KV cache and concurrent chunks fail with
-  "Context size has been exceeded" (`docs/results/annotate-parallel.md`).
+  "Context size has been exceeded".
 - `KEV_GRAPH_STATES` should equal `models.classify.parallel` (8); a
   `gate.window` of 24 runs as three batches.
 - Pin the CPU servers to separate cores with `taskset -c` and set `-t`/`-tb`
   explicitly. llama-server's default thread counts oversubscribe the 5700X
-  when embed and annotate run together (see `docs/results/README.md`).
+  when embed and annotate run together.
 - llama-server GGUF builds (`-hf ggml-org/Kev-4B-GGUF:Q8_0 --decision-type
   kev`, Clef-flash `--decision-type clef`) still work over the same wire, but
   measured 1.4 to 1.6 times slower per state than the fork.
@@ -144,7 +144,7 @@ Status per line: `ok`, `warn` (measured but outside a limit), `unavailable`
 Fit criteria the probe can measure: gate p50 at `gate.window` (GPU) or at
 window >= 10 (CPU, rung 6) within `min(warn_ms, 1000 ms)`, and peak GPU
 memory <= 8192 MiB. Quality (top agreement >= 95%, recall drop <= 2 pts), ECE
-and full pipeline p50 are always `pending`: they need the T20 eval. A rung
+and full pipeline p50 are always `pending`: they need the classify eval. A rung
 reported as fitting is a candidate, not a winner. If every rung of every family
 fails, the output says so; record the gaps in section B and raise it to the
 user, do not ship fallback scoring as the default.
@@ -180,10 +180,10 @@ EOF
 The probe truncates the reference to `models.embed.dim`, so store the full
 vector. Regenerate whenever the embed model or prefixes change.
 
-## What to paste into section B
+## What to record
 
-Use `--record PATH` on every run and paste the files (one per run) under `§B` of
-`docs/SPECS/SPEC.md`. Each snippet has: host line, result table, a
+Use `--record PATH` on every run and keep the files (one per run) with the
+change that tunes a default. Each snippet has: host line, result table, a
 `measurements:` list (all numbers, criterion verdicts, protocol facts) and a
 `decides:` list. Paste raw; do not round. Also paste the `nvidia-smi` total used
 with only the classify server resident, and the exact `llama-server` command
@@ -191,13 +191,13 @@ and build id for each classify rung tried.
 
 ## Which defaults the results decide
 
-- T12 `models.embed.query_device`: CPU stays if `embed.query` cpu p50 is within
+- `models.embed.query_device`: CPU stays if `embed.query` cpu p50 is within
   250 ms (the probe prints the recommendation); otherwise `gpu` and classify
   must share it. `embed.prefix_effect` and `embed.prefix_vs_card` decide
   whether `query_prefix` and `doc_prefix` stay as shipped. Also
   confirm `dim` (1536 vs 512) against `embed.doc_batch` throughput and index
   size.
-- T19 `models.annotate.warn_ms` (default 30000, separate from the 1500 ms
+- `models.annotate.warn_ms` (default 30000, separate from the 1500 ms
   query-time `models.warn_ms`; hard caps are `deadline_ms`, loose by design): the probe prints the p95-based figure
   (p95 x 1.25 rounded up to 500 ms) from `annotate.rate` cpu. GPU
   `chunks_per_s` gives the `cw init` ETA.

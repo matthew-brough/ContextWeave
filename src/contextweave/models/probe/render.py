@@ -34,7 +34,7 @@ def render_json(report: ProbeReport) -> str:
 
 
 def render_record(report: ProbeReport, date: str) -> str:
-    """Markdown snippet for the user to paste under SPEC §B."""
+    """Markdown snippet recording one probe run."""
     host = report.host
     gpu = host.gpu if host.gpu_total_mib is None else f"{host.gpu}, {host.gpu_total_mib:.0f} MiB"
     out = [

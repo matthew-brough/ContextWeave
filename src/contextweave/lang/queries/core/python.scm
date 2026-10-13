@@ -1,4 +1,3 @@
-; SPEC §V.8 — all patterns live here, none in .py
 ; Convention: one @def.<kind> per match, one @name.
 ; Patterns run specific -> general; extract.py keeps the first match per range.
 

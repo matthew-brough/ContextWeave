@@ -41,7 +41,7 @@ def add_parser(commands: SubparserRegistry) -> None:
     probe.add_argument("--device", action="append", choices=[d.value for d in ALL_DEVICES])
     probe.add_argument("--json", action="store_true", dest="as_json")
     probe.add_argument(
-        "--record", type=Path, metavar="PATH", help="write a markdown snippet for §B"
+        "--record", type=Path, metavar="PATH", help="write a markdown snippet of the run"
     )
     probe.add_argument("--runs", type=int, default=DEFAULTS.runs)
     probe.add_argument("--annotate-chunks", type=int, default=DEFAULTS.annotate_chunks)
