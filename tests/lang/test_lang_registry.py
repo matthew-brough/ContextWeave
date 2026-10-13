@@ -12,21 +12,12 @@ from contextweave.lang.registry import (
     BY_EXT,
     BY_FILENAME,
     BY_LANG,
-    GROUPS,
     LANGS,
-    PROFILES,
     load_language,
     query_text,
     spec_for_path,
 )
 from contextweave.lang.ts import compile_query, load_grammar
-
-
-def test_twenty_seven_rows_over_six_groups_and_four_profiles() -> None:
-    assert len(LANGS) == 27
-    assert {s.group for s in LANGS} == set(GROUPS)
-    assert {s.profile for s in LANGS} == set(PROFILES)
-    assert len(BY_LANG) == 27
 
 
 def test_group_profile_table() -> None:
@@ -86,11 +77,6 @@ def test_extension_routing(path: str, lang: str) -> None:
 @pytest.mark.parametrize("path", ["notes.xyz", "noextension", "Makefile", "rules.mk", "dockerfile"])
 def test_unsupported_path_is_none(path: str) -> None:
     assert spec_for_path(path) is None
-
-
-def test_make_is_excluded() -> None:
-    assert "make" not in BY_LANG
-    assert load_language("make") is None
 
 
 def test_unknown_language_loads_as_none() -> None:

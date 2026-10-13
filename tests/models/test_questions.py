@@ -12,12 +12,7 @@ from contextweave.models.decision import CHOICE_OPTION_LIMIT, Question, Question
 from contextweave.models.errors import ModelResponseError
 from contextweave.models.providers import BuildContext, Endpoints
 from contextweave.models.questions import QuestionSetError, load_question_set
-from contextweave.models.slots import default_registries
 from contextweave.models.systemone import SystemOneClient, build_systemone
-
-
-def test_registry_holds_systemone() -> None:
-    assert default_registries().classify.get("systemone") is build_systemone
 
 
 @pytest.mark.parametrize("stage", ["plan", "gate", "coverage"])

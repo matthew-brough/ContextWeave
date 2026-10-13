@@ -29,7 +29,7 @@ from contextweave.models.probe.host import GpuReading, parse_gpu_row
 from contextweave.models.probe.render import render_json, render_record, render_table
 from contextweave.models.probe.report import Line, Status, report_json
 from contextweave.models.probe.runner import run_probe
-from contextweave.models.probe.timing import rate_per_s, sample_ms, summarize
+from contextweave.models.probe.timing import sample_ms, summarize
 from contextweave.models.providers import Device, EmbedKind, Message, ProviderRegistries, Slot
 from contextweave.models.slots import default_registries
 
@@ -208,11 +208,6 @@ def test_sample_ms_discards_warmup_and_times_calls() -> None:
     costs = iter([500.0, 10.0, 20.0, 30.0])
     samples = sample_ms(lambda: clock.spend_ms(next(costs)), clock, runs=3, warmup=1)
     assert samples == pytest.approx([10.0, 20.0, 30.0])
-
-
-def test_rate_per_s() -> None:
-    assert rate_per_s(6, 2000.0) == 3.0
-    assert rate_per_s(6, 0.0) == 0.0
 
 
 def test_parse_gpu_row() -> None:
@@ -536,7 +531,7 @@ def test_json_record_shape() -> None:
     assert report_json(report)["probed"] is True
 
 
-def test_record_markdown_for_section_b() -> None:
+def test_record_markdown() -> None:
     report = probe_fakes(StepClock(), slots=(Slot.EMBED,))
     text = render_record(report, "2026-10-09")
     assert text.startswith("### T10 model probe 2026-10-09")

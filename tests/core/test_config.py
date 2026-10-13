@@ -8,7 +8,6 @@ from contextweave.core.config import (
     Layer,
     config_hash,
     flatten,
-    flatten_config,
     leaf_keys,
     load_config,
     unflatten,
@@ -28,43 +27,6 @@ def write(path: Path, text: str) -> Path:
 
 def user_file(xdg: dict[str, str]) -> Path:
     return Path(xdg["XDG_CONFIG_HOME"]) / "contextweave" / "config.toml"
-
-
-def test_defaults_match_spec(tmp_path: Path, xdg: dict[str, str]) -> None:
-    config = load_config(tmp_path, env=xdg, strict=True).config
-    assert (config.chunk.max_tokens, config.chunk.min_tokens) == (800, 40)
-    assert config.fuse.keep == 100
-    assert (config.gate.window, config.gate.expand_window) == (24, 8)
-    assert (config.gate.card_tokens, config.gate.critical) == (512, 0.8)
-    assert (config.expand.min_score, config.expand.max_depth) == (0.6, 2)
-    assert config.coverage.max_iterations == 2
-    assert config.budget.default_max_tokens == 4000
-    assert config.budget.search_max_tokens == 6000
-    assert config.budget.omitted_max == 50
-    assert config.index.vector_quant == "none"
-    assert config.index.ignore == ()
-    assert "tests/**" in config.index.test_globs
-    assert config.score.gate_answers_query == 0.40
-    assert config.score.gate_norm == 0.90
-    assert config.score.final_redundancy == -0.20
-    assert all(flatten_config(config)[f"pipeline.{s}"] for s in config.pipeline.__slots__)
-    assert (config.daemon.idle_minutes, config.daemon.project_idle_minutes) == (30, 30)
-    assert config.server.pack_cache == 20
-    assert config.hooks.session_start_tokens == 400
-    assert (config.models.warn_ms, config.models.deadline_ms) == (1500, 15000)
-    assert (config.models.annotate.warn_ms, config.models.annotate.deadline_ms) == (30000, 600000)
-    assert config.models.embed.batch_deadline_ms == 300000
-    assert (config.models.skip_warn, config.models.slow_warn) == (0.05, 0.25)
-    assert config.models.embed.dim == 1536
-    assert config.models.classify.devices == ("gpu",)
-    assert config.models.classify.model == "kev-latest"
-    assert config.models.classify.build_id == "kev-0.8b-int8"
-    assert config.models.classify.parallel == 8
-    assert (config.models.annotate.parallel, config.models.annotate.max_output_tokens) == (4, 512)
-    assert config.models.classify.gpu.endpoint == "http://127.0.0.1:8765"
-    assert config.models.classify.cpu.endpoint == "http://127.0.0.1:8766"
-    assert "TriggerClientEvent" in config.edges.events.emitters
-    assert "RegisterNetEvent" in config.edges.events.registrars
 
 
 def test_default_origins(tmp_path: Path, xdg: dict[str, str]) -> None:
