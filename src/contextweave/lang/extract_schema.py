@@ -119,7 +119,7 @@ type _Walker = Callable[[ParsedFile, int, _Sink], None]
 def extract_schema(parsed: ParsedFile, max_depth: int = DEFAULT_MAX_DEPTH) -> SchemaExtraction:
     """Walk a data file into key paths; never raises."""
     sink = _Sink()
-    path = str(parsed.path)
+    path = parsed.path.as_posix()
     walker = _WALKERS.get(parsed.spec.lang)
     if walker is None:
         error = LangError("unsupported_lang", path, f"{parsed.spec.lang} has no schema walker")
@@ -517,7 +517,7 @@ def _walk_csv(parsed: ParsedFile, sink: _Sink) -> None:
                 lang=parsed.spec.lang,
                 group=parsed.spec.group,
                 profile=parsed.spec.profile,
-                path=str(parsed.path),
+                path=parsed.path.as_posix(),
                 start_byte=field_node.start_byte,
                 end_byte=field_node.end_byte,
                 start_line=field_node.start_point[0] + 1,
@@ -551,7 +551,7 @@ def _node(
         lang=parsed.spec.lang,
         group=parsed.spec.group,
         profile=parsed.spec.profile,
-        path=str(parsed.path),
+        path=parsed.path.as_posix(),
         start_byte=owner.start_byte,
         end_byte=owner.end_byte,
         start_line=owner.start_point[0] + 1,

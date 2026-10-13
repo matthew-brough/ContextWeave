@@ -1,11 +1,10 @@
 import os
 import warnings
 from collections.abc import AsyncGenerator, Mapping
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
 from pathlib import Path
 from typing import Protocol
-from urllib.parse import unquote, urlparse
 
 import anyio
 import anyio.to_thread
@@ -78,9 +77,8 @@ class RootsTracker:
             return None
         found: list[Path] = []
         for root in listed.roots:
-            parsed = urlparse(str(root.uri))
-            if parsed.scheme == "file":
-                found.append(Path(unquote(parsed.path)))
+            with suppress(ValueError):
+                found.append(Path.from_uri(str(root.uri)))
         return tuple(found)
 
 

@@ -95,6 +95,15 @@ def apply_changes(changes: list[FileChange], stop: Path) -> None:
 def plan_change(path: Path, after: str | None) -> FileChange | None:
     """Build a FileChange against the file's current content; None when nothing changes."""
     before = read_exact(path)
+    if after is not None and before is not None:
+        after = _match_line_endings(before, after)
     if before == after:
         return None
     return FileChange(path, before, after)
+
+
+def _match_line_endings(before: str, after: str) -> str:
+    """Write CRLF back to a file that used CRLF, so a Windows user's file round-trips."""
+    if "\r\n" not in before or "\r\n" in after:
+        return after
+    return after.replace("\n", "\r\n")

@@ -1,4 +1,5 @@
 import os
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -37,16 +38,41 @@ def local_state(root: Path, env: Mapping[str, str]) -> Path:
     return projects_dir(env) / project_key(root) / LOCAL_STATE
 
 
+def is_dir_link(path: Path) -> bool:
+    """True for a symlink or a Windows junction."""
+    return path.is_symlink() or path.is_junction()
+
+
+def remove_dir_link(path: Path) -> None:
+    """Remove a directory symlink or junction, leaving its target alone."""
+    if path.is_junction():
+        path.rmdir()
+    else:
+        path.unlink()
+
+
+def _link_dir(link: Path, target: Path) -> None:
+    """Symlink link to target; on Windows without symlink privilege fall back to a junction."""
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        if sys.platform != "win32":
+            raise
+        import _winapi
+
+        _winapi.CreateJunction(str(target), str(link))
+
+
 def ensure_self_ignore(root: Path, env: Mapping[str, str] = os.environ) -> Path:
     """Create the state directory with a gitignore of its own; the user's gitignore is untouched.
 
     A new state directory lives under the user state dir; root/.contextweave links to it.
     """
     directory = state_dir(root)
-    if not directory.exists() and not directory.is_symlink():
+    if not directory.exists() and not is_dir_link(directory):
         target = local_state(root, env)
         target.mkdir(parents=True, exist_ok=True)
-        directory.symlink_to(target, target_is_directory=True)
+        _link_dir(directory, target)
     directory.mkdir(parents=True, exist_ok=True)
     ignore = directory / ".gitignore"
     if not ignore.is_file() or ignore.read_text(encoding="utf-8") != SELF_IGNORE:

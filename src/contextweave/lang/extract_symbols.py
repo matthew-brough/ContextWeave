@@ -121,7 +121,12 @@ def preceding_comment_block(node: Node, src: bytes) -> str | None:
             block.append(cursor)
             cursor = cursor.prev_sibling
     block.reverse()
-    return src[block[0].start_byte : block[-1].end_byte].decode("utf-8", errors="replace")
+    return _text(src[block[0].start_byte : block[-1].end_byte])
+
+
+def _text(raw: bytes) -> str:
+    """Decode a doc span with CRLF line endings folded to LF."""
+    return raw.decode("utf-8", errors="replace").replace("\r\n", "\n").removesuffix("\r")
 
 
 def _trailing_comment(node: Node | None) -> Node | None:
@@ -144,7 +149,7 @@ def python_docstring(body: Node | None, src: bytes) -> str | None:
         first = first.named_children[0] if first.named_children else first
     if first.type != "string":
         return None
-    return src[first.start_byte : first.end_byte].decode("utf-8", errors="replace")
+    return _text(src[first.start_byte : first.end_byte])
 
 
 @lru_cache(maxsize=64)
@@ -155,7 +160,7 @@ def _compiled(lang: str, source: str) -> Query | None:
 
 def extract_symbols(parsed: ParsedFile) -> SymbolExtraction:
     """Run the language's query file over a parsed tree; never raises."""
-    path = str(parsed.path)
+    path = parsed.path.as_posix()
     text = query_text(parsed.spec)
     if text is None:
         return _failed(LangError("no_query", path, f"{parsed.spec.lang} has no query file"))
@@ -277,7 +282,7 @@ def _nest(raw: _RawDefs, parsed: ParsedFile) -> list[Symbol]:
             lang=parsed.spec.lang,
             group=parsed.spec.group,
             profile=parsed.spec.profile,
-            path=str(parsed.path),
+            path=parsed.path.as_posix(),
             start_byte=start,
             end_byte=end,
             start_line=outer.start_point[0] + 1,

@@ -50,7 +50,7 @@ def extract_edges(parsed: ParsedFile) -> EdgeExtraction:
     text = edge_query_text(parsed.spec)
     if text is None:
         return EdgeExtraction((), (), ())
-    path = str(parsed.path)
+    path = parsed.path.as_posix()
     query = _compiled(parsed.spec.lang, text)
     if query is None:
         return EdgeExtraction(

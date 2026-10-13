@@ -101,6 +101,7 @@ def test_no_root_skips_project_layers(tmp_path: Path, xdg: dict[str, str]) -> No
 
 def test_xdg_fallback_to_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     write(tmp_path / ".config" / "contextweave" / "config.toml", "[fuse]\nkeep = 9\n")
     assert load_config(None, env={}, strict=True).config.fuse.keep == 9
 

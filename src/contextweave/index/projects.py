@@ -10,7 +10,7 @@ import tomli_w
 
 from contextweave.core.paths import MEMORY_DB_NAME
 from contextweave.core.refs import project_key
-from contextweave.index.root import LOCAL_STATE, STATE_DIR
+from contextweave.index.root import LOCAL_STATE, STATE_DIR, is_dir_link, remove_dir_link
 
 META_FILE = "meta.toml"
 _HEX12 = re.compile(r"[0-9a-f]{12}")
@@ -119,11 +119,11 @@ class ProjectRegistry:
             return None
         directory = self._dir(key)
         root_state = entry.root / STATE_DIR
-        if root_state.is_symlink():
+        if is_dir_link(root_state):
             target = root_state.resolve()
             removed_root_state = target.name == LOCAL_STATE and target.parent.name == key
             if removed_root_state:
-                root_state.unlink()
+                remove_dir_link(root_state)
                 shutil.rmtree(target, ignore_errors=True)
         else:
             removed_root_state = root_state.is_dir()

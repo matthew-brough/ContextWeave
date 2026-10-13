@@ -14,12 +14,14 @@ from contextweave.memory.store import (
 
 TABLES = ["sessions", "prompts", "savings_log"]
 
+X_STATE = str(Path(Path(__file__).anchor, "x"))
+
 
 def test_state_dir_honours_xdg_and_falls_back_to_home() -> None:
-    assert state_dir({"XDG_STATE_HOME": "/x"}) == Path("/x/contextweave")
+    assert state_dir({"XDG_STATE_HOME": X_STATE}) == Path(X_STATE, "contextweave")
     assert state_dir({}) == Path.home() / ".local" / "state" / "contextweave"
-    assert memory_db_path(KEY_A, {"XDG_STATE_HOME": "/x"}) == Path(
-        f"/x/contextweave/projects/{KEY_A}/memory.db"
+    assert memory_db_path(KEY_A, {"XDG_STATE_HOME": X_STATE}) == Path(
+        f"{X_STATE}/contextweave/projects/{KEY_A}/memory.db"
     )
 
 

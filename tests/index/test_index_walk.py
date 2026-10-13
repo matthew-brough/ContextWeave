@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from links import needs_symlinks
+
 from contextweave.index.walk import walk_project
 
 
@@ -95,6 +97,7 @@ def test_no_size_cap(tmp_path: Path) -> None:
     assert walked[0].size > 2_000_000
 
 
+@needs_symlinks
 def test_dir_symlink_not_followed_and_outside_file_skipped(tmp_path: Path) -> None:
     root = tmp_path / "root"
     outside = tmp_path / "outside"

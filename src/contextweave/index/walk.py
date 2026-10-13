@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pathspec import GitIgnoreSpec
 
-from contextweave.index.root import GIT_MARKER, STATE_DIR
+from contextweave.index.root import GIT_MARKER, STATE_DIR, is_dir_link
 from contextweave.lang.registry import LangSpec, spec_for_path
 
 BINARY_SNIFF_BYTES = 8192
@@ -78,7 +78,7 @@ def _walk_from(
         scopes = _with_local_gitignore(directory, relative, scopes)
         directory = directory / part
         relative = f"{relative}{part}/"
-    if directory.is_symlink() or not directory.is_dir():
+    if is_dir_link(directory) or not directory.is_dir():
         return
     _walk_dir(root, directory, relative, scopes, config_spec, found)
 
@@ -101,7 +101,9 @@ def _walk_dir(
             continue
         child = f"{relative}{entry.name}"
         try:
-            if entry.is_symlink() and (entry.is_dir() or not _inside(root, Path(entry.path))):
+            if entry.is_junction() or (
+                entry.is_symlink() and (entry.is_dir() or not _inside(root, Path(entry.path)))
+            ):
                 continue
             is_dir = entry.is_dir(follow_symlinks=False)
             if _ignored(child, is_dir, scopes, config_spec):

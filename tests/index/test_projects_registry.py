@@ -3,11 +3,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from links import needs_symlinks
 
 from contextweave.core.paths import user_state_dir
 from contextweave.core.refs import project_key
 from contextweave.index.projects import ProjectRegistry
-from contextweave.index.root import ensure_self_ignore
+from contextweave.index.root import ensure_self_ignore, is_dir_link
 
 
 class Clock:
@@ -44,7 +45,7 @@ def root(tmp_path: Path) -> Iterator[Path]:
 
 
 def snapshot(base: Path) -> set[str]:
-    return {str(p.relative_to(base)) for p in base.rglob("*")}
+    return {p.relative_to(base).as_posix() for p in base.rglob("*")}
 
 
 def test_register_writes_meta(registry: ProjectRegistry, root: Path, state: Path) -> None:
@@ -176,7 +177,7 @@ def user_registry(tmp_path: Path, clock: Clock) -> ProjectRegistry:
 def test_linked_root_state_links_to_user_state(linked_root: Path, tmp_path: Path) -> None:
     link = linked_root / ".contextweave"
     target = tmp_path / "contextweave" / "projects" / project_key(linked_root) / "state"
-    assert link.is_symlink() and link.resolve() == target.resolve()
+    assert is_dir_link(link) and link.resolve() == target.resolve()
     assert (target / ".gitignore").read_text(encoding="utf-8") == "*\n"
 
 
@@ -188,7 +189,7 @@ def test_forget_removes_linked_state(
     target = tmp_path / "contextweave" / "projects" / entry.key / "state"
     result = user_registry.forget(entry.key, keep_memory=keep_memory)
     assert result is not None and result.removed_root_state
-    assert not (linked_root / ".contextweave").is_symlink()
+    assert not is_dir_link(linked_root / ".contextweave")
     assert not target.exists()
 
 
@@ -202,6 +203,7 @@ def test_forget_missing_removes_linked_state(
     assert not (tmp_path / "contextweave" / "projects" / entry.key).exists()
 
 
+@needs_symlinks
 def test_forget_keeps_foreign_symlinked_state(registry: ProjectRegistry, tmp_path: Path) -> None:
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()

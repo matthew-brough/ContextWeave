@@ -76,12 +76,19 @@ class LockTimeoutError(Exception):
 
 
 if sys.platform == "win32":
+    import msvcrt
 
     def _try_lock(descriptor: int) -> bool:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        try:
+            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return False
         return True
 
     def _unlock(descriptor: int) -> None:
-        return None
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
 
 else:
     import fcntl

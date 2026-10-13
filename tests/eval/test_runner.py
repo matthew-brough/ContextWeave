@@ -135,7 +135,7 @@ def test_live_suite_serves_repo_without_checkout(tmp_path: Path) -> None:
     registry.register("cw", factory)
     suite_file = tmp_path / "live.toml"
     suite_file.write_text(
-        f'repo = "{tmp_path}"\ncommit = "live"\n[[case]]\nquery = "q1"\nexpect = ["a"]\n'
+        f'repo = "{tmp_path.as_posix()}"\ncommit = "live"\n[[case]]\nquery = "q1"\nexpect = ["a"]\n'
     )
     deps = EvalDeps(adapters=registry, checkout=no_checkout, env={})
     assert run_eval(EvalOptions(suite=str(suite_file)), deps) == 0

@@ -82,13 +82,15 @@ def test_materialise_pins_commit(tmp_path: Path) -> None:
     (repo / "m.py").write_text("def two() -> None: ...\n")
     _git(repo, "commit", "-qam", "two")
     suite = parse_suite(
-        "t", f'repo = "{repo}"\ncommit = "{pinned}"\n[[case]]\nquery = "q"\nexpect = ["one"]\n'
+        "t",
+        f'repo = "{repo.as_posix()}"\ncommit = "{pinned}"\n[[case]]\nquery = "q"\nexpect = ["one"]\n',
     )
     root = materialise(suite, tmp_path / "cache")
     assert (root / "m.py").read_text() == "def one() -> None: ...\n"
     assert materialise(suite, tmp_path / "cache") == root
     bad = parse_suite(
-        "t", f'repo = "{repo}"\ncommit = "deadbeef"\n[[case]]\nquery = "q"\nexpect = ["one"]\n'
+        "t",
+        f'repo = "{repo.as_posix()}"\ncommit = "deadbeef"\n[[case]]\nquery = "q"\nexpect = ["one"]\n',
     )
     with pytest.raises(CheckoutError):
         materialise(bad, tmp_path / "cache")

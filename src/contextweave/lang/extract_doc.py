@@ -78,7 +78,7 @@ class _Slugger:
 def extract_doc(parsed: ParsedFile) -> DocExtraction:
     """Walk a document into its outline; never raises."""
     sink = _Sink([], [], {})
-    path = str(parsed.path)
+    path = parsed.path.as_posix()
     lang = parsed.spec.lang
     try:
         if lang == "markdown":
@@ -369,7 +369,7 @@ def _doc_node(
         lang=parsed.spec.lang,
         group=parsed.spec.group,
         profile=parsed.spec.profile,
-        path=str(parsed.path),
+        path=parsed.path.as_posix(),
         start_byte=node.start_byte,
         end_byte=node.end_byte,
         start_line=node.start_point[0] + 1,

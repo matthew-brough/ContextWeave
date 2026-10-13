@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+# Byte-for-byte fixtures: offsets and hashes are taken from the raw bytes,
+# so the checkout must not rewrite line endings on any platform.
+tests/fixtures/** -text
+*.scm -text

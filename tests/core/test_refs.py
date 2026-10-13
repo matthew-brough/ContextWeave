@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from links import needs_symlinks
 
 from contextweave.core.refs import (
     Anchor,
@@ -98,6 +99,7 @@ def test_invalid_ref_construction() -> None:
         Ref(KEY, "a.py", ByteAnchor(5, 1), HASH)
 
 
+@needs_symlinks
 def test_project_key(tmp_path: Path) -> None:
     key = project_key(tmp_path)
     assert len(key) == 12
