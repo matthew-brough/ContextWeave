@@ -1,6 +1,6 @@
 [project]
 name = "contextweave-mcp"
-version = "0.6.0"
+version = "0.6.2"
 description = "Unified code-context MCP server: structural, lexical and semantic retrieval"
 readme = "README.md"
 requires-python = ">=3.14"
