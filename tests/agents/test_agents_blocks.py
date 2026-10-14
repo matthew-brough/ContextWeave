@@ -12,11 +12,26 @@ TERMINATED = SURROUND.map(lambda text: text.rstrip("\n") + "\n" if text.strip("\
 
 def test_routing_block_has_markers_and_routes() -> None:
     span = find_block(BLOCK)
-    assert span is not None and span.version == 1
-    assert BLOCK.startswith("<!-- contextweave:begin v=1 -->")
+    assert span is not None and span.version == 2
+    assert BLOCK.startswith("<!-- contextweave:begin v=2 -->")
     assert BLOCK.endswith("<!-- contextweave:end -->")
-    for name in ("get_symbol", "context_search", "Read"):
-        assert name in BLOCK
+    for name in (
+        "get_symbol",
+        "search_symbols",
+        "file_outline",
+        "context_search",
+        "related",
+        "expand",
+        "ast_query",
+        "Read",
+        "Grep",
+    ):
+        assert f"`{name}`" in BLOCK
+
+
+def test_routing_block_covers_shell_reads() -> None:
+    for command in ("grep", "rg", "sed -n", "cat", "head", "tail", "awk"):
+        assert f"`{command}`" in BLOCK
 
 
 @given(SURROUND)

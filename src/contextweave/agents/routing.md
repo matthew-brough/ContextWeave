@@ -1,17 +1,28 @@
-<!-- contextweave:begin v=1 -->
+<!-- contextweave:begin v=2 -->
 ## Code retrieval (ContextWeave)
 
-Route on what you can name.
+ContextWeave is the default way to read code. Use it before `Read` or `Grep`
+on any source file; results carry exact spans and line numbers.
 
-- **Name it** (a symbol, key path or heading): `get_symbol` for one definition,
-  `search_symbols` to find a name across the repo, `file_outline` for a file's
-  shape, `ast_query` as the escape hatch.
-- **Describe it** (behaviour you can characterise but not name): `context_search`.
-  Its hits carry names and refs; hand them to `get_symbol` or `expand` for the
-  exact definition.
-- **Read it** (a path you are about to edit, or content you need verbatim): `Read`.
+| You have | Use |
+|---|---|
+| A name (symbol, key path, heading) | `get_symbol`; unsure of exact name → `search_symbols` |
+| A file, want its shape | `file_outline` |
+| Behaviour you can describe, no name | `context_search` |
+| A symbol, want callers, callees, tests, imports | `related` |
+| A `cw://` ref from any result | `expand` |
+| A structural pattern nothing above fits | `ast_query` |
 
-Do not read a whole file to answer a question about its shape. A tool that
-reports a size cap or finds nothing is an answer; say so instead of falling
-back to a bulk read.
+`Read` only to edit, or for a file ContextWeave does not index. When editing,
+read the lines a tool already reported (`offset`/`limit` from `Lstart-end`).
+
+These rules cover the shell too: `grep`, `rg`, `sed -n`, `cat`, `head`, `tail`,
+`awk` on source files are the same `Grep`/`Read` and follow the same limits.
+Searching for a definition and then slicing out its lines is `get_symbol`, done
+by hand. `Grep` (any form) only for literal text that is not a name: error
+strings, log messages, TODOs.
+
+Never answer a code question from a whole-file read. A miss escalates within
+ContextWeave (`get_symbol` → `search_symbols` → `context_search`), never to a
+bulk read. A size cap or empty result at the end of that is the answer; say so.
 <!-- contextweave:end -->

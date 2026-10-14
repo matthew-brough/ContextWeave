@@ -133,11 +133,11 @@ def test_uninstall_removes_files_it_created(root: Path, home: Path) -> None:
 
 
 def test_claude_md_block_replaced_in_place(root: Path, home: Path) -> None:
-    stale = "intro\n\n<!-- contextweave:begin v=0 -->\nold\n<!-- contextweave:end -->\n\noutro\n"
+    stale = "intro\n\n<!-- contextweave:begin v=1 -->\nold\n<!-- contextweave:end -->\n\noutro\n"
     (root / "CLAUDE.md").write_text(stale, encoding="utf-8")
     ClaudeCodeAdapter().install(root, opts(home))
     text = (root / "CLAUDE.md").read_text(encoding="utf-8")
-    assert text.startswith("intro\n\n<!-- contextweave:begin v=1 -->")
+    assert text.startswith("intro\n\n<!-- contextweave:begin v=2 -->")
     assert text.endswith("<!-- contextweave:end -->\n\noutro\n")
     assert "old" not in text
 
