@@ -68,9 +68,7 @@ def test_deleted_file_dropped(store: Store) -> None:
 
 def test_retrieve_stage_refreshes_before_returning(store: Store) -> None:
     seed(store)
-    (store.root / "mod.py").write_text(
-        ORIGINAL.replace("beta_target", "gamma_other"), encoding="utf-8"
-    )
+    (store.root / "mod.py").write_text(ORIGINAL.replace("beta_target", "gamma"), encoding="utf-8")
     ctx = make_ctx(store, "beta_target", mode="lexical")
     assert len(RetrieveStage().run(ctx, CandidateSet())) == 0
 
