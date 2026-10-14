@@ -8,7 +8,7 @@ from contextweave.agents.catalog import DEFAULT_AGENT, NO_AGENT, default_adapter
 from contextweave.agents.conflicts import Conflict, detect_conflicts, format_conflicts
 from contextweave.agents.hooks import run_hook as dispatch_hook
 from contextweave.agents.transport import HookTransport, IpcTransport
-from contextweave.core.config import Config, ConfigError, load_config
+from contextweave.core.config import Config, ConfigError, HooksConfig, load_config
 from contextweave.core.interrupt import deferred_interrupt
 from contextweave.core.paths import user_state_dir
 from contextweave.core.registry import UnknownKeyError
@@ -85,7 +85,10 @@ def run_init(
     conflicts = () if adapter is None else tuple(detect_conflicts(project, user_home, environment))
     if conflicts and not force:
         return CommandResult(EXIT_FAILED, (format_conflicts(list(conflicts)),), (), conflicts)
-    opts = InstallOpts(user_home, plugin, plugin_dir, dry_run=True, env=environment)
+    hook_timeout_s = config.hooks.agent_timeout_s
+    opts = InstallOpts(
+        user_home, plugin, plugin_dir, dry_run=True, env=environment, hook_timeout_s=hook_timeout_s
+    )
     try:
         planned = [] if adapter is None else adapter.install(project, opts)
     except AgentConfigError as exc:
@@ -103,7 +106,15 @@ def run_init(
             []
             if adapter is None
             else adapter.install(
-                project, InstallOpts(user_home, plugin, plugin_dir, dry_run=False, env=environment)
+                project,
+                InstallOpts(
+                    user_home,
+                    plugin,
+                    plugin_dir,
+                    dry_run=False,
+                    env=environment,
+                    hook_timeout_s=hook_timeout_s,
+                ),
             )
         )
     return CommandResult(
@@ -149,7 +160,10 @@ def run_hook(
 ) -> tuple[bytes, int]:
     """Entry for `cw hook <event>`: stdout bytes and an exit code that is always 0."""
     environment = os.environ if env is None else env
-    chosen = (
-        transport if transport is not None else IpcTransport(client_for(environment), environment)
-    )
-    return dispatch_hook(event, stdin_bytes, env=environment, transport=chosen)
+
+    def connect(hooks: HooksConfig) -> HookTransport:
+        return IpcTransport(
+            client_for(environment), environment, timeout_s=hooks.ipc_timeout_ms / 1000
+        )
+
+    return dispatch_hook(event, stdin_bytes, env=environment, transport=transport, connect=connect)

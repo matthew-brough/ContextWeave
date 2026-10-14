@@ -28,7 +28,7 @@ class AgentsMdAdapter:
     def detect(self, root: Path) -> bool:
         return (root / MEMORY_FILE).exists()
 
-    def hook_events(self) -> Mapping[str, HookSpec]:
+    def hook_events(self, timeout_s: int) -> Mapping[str, HookSpec]:
         return {}
 
     def install(self, root: Path, opts: InstallOpts) -> list[FileChange]:

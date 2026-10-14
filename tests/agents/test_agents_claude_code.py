@@ -34,7 +34,7 @@ def test_registry_holds_every_adapter() -> None:
 
 
 def test_hook_events_cover_five_events() -> None:
-    events = ClaudeCodeAdapter().hook_events()
+    events = ClaudeCodeAdapter().hook_events(10)
     assert list(events) == ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd"]
     assert events["Stop"].command == "cw hook Stop"
     assert events["SessionStart"].waits and not events["Stop"].waits
@@ -81,6 +81,33 @@ def test_mcp_merge_preserves_foreign_keys_and_order(root: Path, home: Path) -> N
     servers = merged["mcpServers"]
     assert isinstance(servers, dict)
     assert list(servers) == ["zeta", "alpha", "contextweave"]
+
+
+def hook_timeouts(root: Path) -> list[JSON]:
+    settings = read_json(root / ".claude" / "settings.json")
+    assert isinstance(settings, dict) and isinstance(settings["hooks"], dict)
+    return [
+        entry["timeout"]
+        for groups in settings["hooks"].values()
+        if isinstance(groups, list)
+        for group in groups
+        if isinstance(group, dict) and isinstance(group["hooks"], list)
+        for entry in group["hooks"]
+        if isinstance(entry, dict)
+    ]
+
+
+def test_install_writes_configured_timeout(root: Path, home: Path) -> None:
+    ClaudeCodeAdapter().install(root, InstallOpts(home, hook_timeout_s=42))
+    assert hook_timeouts(root) == [42] * 5
+
+
+def test_reinstall_refreshes_stale_timeout(root: Path, home: Path) -> None:
+    adapter = ClaudeCodeAdapter()
+    adapter.install(root, InstallOpts(home, hook_timeout_s=1))
+    changes = adapter.install(root, InstallOpts(home, hook_timeout_s=10))
+    assert [change.path.name for change in changes] == ["settings.json"]
+    assert hook_timeouts(root) == [10] * 5
 
 
 def test_install_is_idempotent(root: Path, home: Path) -> None:

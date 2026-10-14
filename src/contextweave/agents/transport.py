@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Protocol
 
 from contextweave.agents.session_context import build_session_context
-from contextweave.core.config import LoadedConfig
+from contextweave.core.config import HooksConfig, LoadedConfig
 from contextweave.core.project import ResolvedProject
 from contextweave.core.types import JSON
 from contextweave.daemon.client import DaemonUnavailable, IpcClient, RemoteError
@@ -142,7 +142,7 @@ class InprocTransport:
             store.end_session(session_id, "completed", reason)
 
 
-HOOK_TIMEOUT_S = 0.2
+HOOK_TIMEOUT_S = HooksConfig().ipc_timeout_ms / 1000
 
 
 class IpcTransport:

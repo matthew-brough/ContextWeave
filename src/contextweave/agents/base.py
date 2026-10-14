@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Protocol
 
 from contextweave.core.atomic import write_atomic
+from contextweave.core.config import HooksConfig
 from contextweave.core.registry import Registry
 
 
@@ -16,6 +17,7 @@ class InstallOpts:
     plugin_dir: Path | None = None
     dry_run: bool = False
     env: Mapping[str, str] = field(default_factory=dict[str, str])
+    hook_timeout_s: int = HooksConfig().agent_timeout_s
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +50,7 @@ class AgentAdapter(Protocol):
 
     def uninstall(self, root: Path, opts: InstallOpts) -> list[FileChange]: ...
 
-    def hook_events(self) -> Mapping[str, HookSpec]: ...
+    def hook_events(self, timeout_s: int) -> Mapping[str, HookSpec]: ...
 
 
 type AdapterRegistry = Registry[str, AgentAdapter]

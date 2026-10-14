@@ -33,7 +33,6 @@ PLUGIN_HOOKS = Path("hooks") / "hooks.json"
 PLUGIN_SKILL = Path("skills") / "contextweave-routing" / "SKILL.md"
 HOOK_EVENTS = ("SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd")
 WAITING_EVENTS = frozenset({"SessionStart"})
-HOOK_TIMEOUT_S = 1
 
 
 def _changes(candidates: list[FileChange | None]) -> list[FileChange]:
@@ -48,24 +47,27 @@ class ClaudeCodeAdapter:
     def detect(self, root: Path) -> bool:
         return any((root / marker).exists() for marker in (".claude", MEMORY_FILE, MCP_FILE))
 
-    def hook_events(self) -> Mapping[str, HookSpec]:
+    def hook_events(self, timeout_s: int) -> Mapping[str, HookSpec]:
         return {
-            event: HookSpec(event, f"cw hook {event}", HOOK_TIMEOUT_S, event in WAITING_EVENTS)
+            event: HookSpec(event, f"cw hook {event}", timeout_s, event in WAITING_EVENTS)
             for event in HOOK_EVENTS
         }
 
     def install(self, root: Path, opts: InstallOpts) -> list[FileChange]:
         changes = (
-            self._plan_plugin(self._plugin_dir(root, opts))
+            self._plan_plugin(self._plugin_dir(root, opts), opts.hook_timeout_s)
             if opts.plugin
-            else self._plan_project(root)
+            else self._plan_project(root, opts.hook_timeout_s)
         )
         if not opts.dry_run:
             apply_changes(changes, root)
         return changes
 
     def uninstall(self, root: Path, opts: InstallOpts) -> list[FileChange]:
-        changes = [*self._plan_unproject(root), *self._plan_unplugin(self._plugin_dir(root, opts))]
+        changes = [
+            *self._plan_unproject(root, opts.hook_timeout_s),
+            *self._plan_unplugin(self._plugin_dir(root, opts)),
+        ]
         if not opts.dry_run:
             apply_changes(changes, root)
         return changes
@@ -74,7 +76,7 @@ class ClaudeCodeAdapter:
     def _plugin_dir(root: Path, opts: InstallOpts) -> Path:
         return opts.plugin_dir if opts.plugin_dir is not None else root / PLUGIN_SUBDIR
 
-    def _plan_project(self, root: Path) -> list[FileChange]:
+    def _plan_project(self, root: Path, timeout_s: int) -> list[FileChange]:
         mcp_path = root / MCP_FILE
         settings_path = root / SETTINGS_FILE
         return _changes(
@@ -83,12 +85,14 @@ class ClaudeCodeAdapter:
                 plan_block_install(root / MEMORY_FILE),
                 plan_change(
                     settings_path,
-                    merge_hooks(read_exact(settings_path), settings_path, self.hook_events()),
+                    merge_hooks(
+                        read_exact(settings_path), settings_path, self.hook_events(timeout_s)
+                    ),
                 ),
             ]
         )
 
-    def _plan_unproject(self, root: Path) -> list[FileChange]:
+    def _plan_unproject(self, root: Path, timeout_s: int) -> list[FileChange]:
         mcp_path = root / MCP_FILE
         settings_path = root / SETTINGS_FILE
         mcp = read_exact(mcp_path)
@@ -98,19 +102,20 @@ class ClaudeCodeAdapter:
                 plan_change(mcp_path, unmerge_mcp(mcp, mcp_path)) if mcp is not None else None,
                 plan_block_removal(root / MEMORY_FILE),
                 plan_change(
-                    settings_path, unmerge_hooks(settings, settings_path, self.hook_events())
+                    settings_path,
+                    unmerge_hooks(settings, settings_path, self.hook_events(timeout_s)),
                 )
                 if settings is not None
                 else None,
             ]
         )
 
-    def _plan_plugin(self, target: Path) -> list[FileChange]:
+    def _plan_plugin(self, target: Path, timeout_s: int) -> list[FileChange]:
         layout = Layout()
         documents = {
             PLUGIN_MANIFEST: dump_object(plugin_manifest(), layout),
             PLUGIN_MCP: dump_object(mcp_document(), layout),
-            PLUGIN_HOOKS: dump_object(hooks_document(self.hook_events()), layout),
+            PLUGIN_HOOKS: dump_object(hooks_document(self.hook_events(timeout_s)), layout),
             PLUGIN_SKILL: routing_skill(),
         }
         return _changes([plan_change(target / rel, text) for rel, text in documents.items()])

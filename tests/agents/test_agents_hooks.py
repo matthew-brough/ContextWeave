@@ -12,7 +12,7 @@ from contextweave.agents.hooks import HookLimits, parse_event
 from contextweave.agents.hooks import run_hook as dispatch
 from contextweave.agents.transport import HookTransport, InprocTransport
 from contextweave.core.budget import bytes35
-from contextweave.core.config import Config, LoadedConfig
+from contextweave.core.config import Config, HooksConfig, LoadedConfig
 from contextweave.core.paths import user_state_dir
 from contextweave.core.project import ResolvedProject
 from contextweave.core.refs import project_key
@@ -189,6 +189,20 @@ def test_total_deadline_gives_no_output(
         0,
     )
     slow.release.set()
+
+
+def test_configured_deadline_gives_no_output(
+    root: Path, project: ResolvedProject, env: dict[str, str]
+) -> None:
+    (root / ".contextweave.toml").write_text("[hooks]\ndeadline_ms = 50\n", encoding="utf-8")
+    slow = Slow()
+    assert run_hook("UserPromptSubmit", payload(root, prompt="x"), env, slow) == (b"", 0)
+    slow.release.set()
+
+
+def test_limits_follow_hooks_config() -> None:
+    limits = HookLimits.from_config(HooksConfig(deadline_ms=5000, session_start_deadline_ms=3000))
+    assert limits == HookLimits(total_s=5.0, session_start_s=3.0)
 
 
 def run_hook_with(

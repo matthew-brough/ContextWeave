@@ -168,7 +168,7 @@ def test_dry_run_writes_nothing(root: Path, home: Path) -> None:
 
 
 def test_no_hooks() -> None:
-    assert CodexAdapter().hook_events() == {}
+    assert CodexAdapter().hook_events(10) == {}
 
 
 def test_run_init_and_uninstall_via_cli_entry(root: Path, home: Path, env: dict[str, str]) -> None:

@@ -1,13 +1,15 @@
 import json
 import threading
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import Self
 
 from contextweave.agents.jsonio import JSONObject, parse_object
 from contextweave.agents.transport import HookTransport, InprocTransport
-from contextweave.core.config import load_config
+from contextweave.core.config import HooksConfig, LoadedConfig, load_config
 from contextweave.core.paths import user_state_dir
 from contextweave.core.project import ResolvedProject, resolve_project
 from contextweave.core.types import JSON
@@ -31,8 +33,12 @@ class HookEvent(StrEnum):
 class HookLimits:
     """Wall-clock ceilings in seconds (V17); SessionStart waits less than the rest."""
 
-    total_s: float = 0.5
-    session_start_s: float = 0.3
+    total_s: float
+    session_start_s: float
+
+    @classmethod
+    def from_config(cls, hooks: HooksConfig) -> Self:
+        return cls(hooks.deadline_ms / 1000, hooks.session_start_deadline_ms / 1000)
 
     def for_event(self, event: HookEvent) -> float:
         return self.session_start_s if event is HookEvent.SESSION_START else self.total_s
@@ -109,19 +115,28 @@ def _session_start_output(context: str) -> bytes:
     return json.dumps(body, ensure_ascii=False).encode("utf-8")
 
 
-def _handle(
-    event: HookEvent, stdin: bytes, env: Mapping[str, str], transport: HookTransport
-) -> bytes:
+@dataclass(frozen=True, slots=True)
+class _Prepared:
+    payload: HookPayload
+    project: ResolvedProject
+    loaded: LoadedConfig
+
+
+def _prepare(stdin: bytes, env: Mapping[str, str]) -> _Prepared | None:
     payload = parse_payload(stdin)
     if payload is None:
-        return NO_OUTPUT
+        return None
     project = _resolve(payload, env)
     if project is None:
-        return NO_OUTPUT
+        return None
+    return _Prepared(payload, project, load_config(project.root, strict=False, env=env))
+
+
+def _handle(event: HookEvent, prepared: _Prepared, transport: HookTransport) -> bytes:
+    payload, project = prepared.payload, prepared.project
     match event:
         case HookEvent.SESSION_START:
-            loaded = load_config(project.root, strict=False, env=env)
-            context = transport.session_start(project, payload.session_id, loaded)
+            context = transport.session_start(project, payload.session_id, prepared.loaded)
             return _session_start_output(context) if context else NO_OUTPUT
         case HookEvent.USER_PROMPT_SUBMIT:
             if payload.prompt is not None:
@@ -143,8 +158,8 @@ def _handle(
     return NO_OUTPUT
 
 
-def _within(limit_s: float, work: Callable[[], bytes]) -> bytes:
-    box: list[bytes] = []
+def _within[T](limit_s: float, work: Callable[[], T]) -> T | None:
+    box: list[T] = []
 
     def target() -> None:
         try:
@@ -154,8 +169,8 @@ def _within(limit_s: float, work: Callable[[], bytes]) -> bytes:
 
     thread = threading.Thread(target=target, daemon=True)
     thread.start()
-    thread.join(limit_s)
-    return box[0] if box and not thread.is_alive() else NO_OUTPUT
+    thread.join(max(limit_s, 0.0))
+    return box[0] if box and not thread.is_alive() else None
 
 
 def run_hook(
@@ -164,13 +179,31 @@ def run_hook(
     *,
     env: Mapping[str, str],
     transport: HookTransport | None = None,
+    connect: Callable[[HooksConfig], HookTransport] | None = None,
     limits: HookLimits | None = None,
 ) -> tuple[bytes, int]:
-    """Run one hook fail-open: stdout bytes plus exit code 0, whatever happens (V17)."""
+    """Run one hook fail-open: stdout bytes plus exit code 0, whatever happens (V17).
+
+    Ceilings come from the project's hooks config unless limits overrides them; connect
+    builds the transport from that config when no transport is given.
+    """
     parsed = parse_event(event)
     if parsed is None:
         return NO_OUTPUT, 0
-    backend = transport if transport is not None else InprocTransport(env)
-    ceiling = (limits or HookLimits()).for_event(parsed)
-    output = _within(ceiling, lambda: _handle(parsed, stdin, env, backend))
-    return output, 0
+    started = time.monotonic()
+    fallback = limits or HookLimits.from_config(HooksConfig())
+    prepared = _within(fallback.for_event(parsed), lambda: _prepare(stdin, env))
+    if prepared is None:
+        return NO_OUTPUT, 0
+    hooks = prepared.loaded.config.hooks
+    ceiling = (limits or HookLimits.from_config(hooks)).for_event(parsed)
+
+    def work() -> bytes:
+        if transport is not None:
+            backend = transport
+        else:
+            backend = connect(hooks) if connect is not None else InprocTransport(env)
+        return _handle(parsed, prepared, backend)
+
+    output = _within(ceiling - (time.monotonic() - started), work)
+    return output or NO_OUTPUT, 0

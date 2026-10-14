@@ -185,6 +185,10 @@ class ServerConfig:
 @dataclass(frozen=True, slots=True)
 class HooksConfig:
     session_start_tokens: int = 400
+    agent_timeout_s: int = 10
+    deadline_ms: int = 5000
+    session_start_deadline_ms: int = 3000
+    ipc_timeout_ms: int = 2000
 
 
 @dataclass(frozen=True, slots=True)

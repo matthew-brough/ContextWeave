@@ -70,11 +70,13 @@ def _group_hooks(group: JSON) -> list[JSON] | None:
     return list_at(group, "hooks") if isinstance(group, dict) else None
 
 
-def _has_command(group: JSON, command: str) -> bool:
-    entries = _group_hooks(group)
-    return entries is not None and any(
-        isinstance(entry, dict) and entry.get("command") == command for entry in entries
-    )
+def _entries_for(groups: list[JSON], command: str) -> list[JSONObject]:
+    return [
+        entry
+        for group in groups
+        for entry in _group_hooks(group) or []
+        if isinstance(entry, dict) and entry.get("command") == command
+    ]
 
 
 def hooks_document(specs: Mapping[str, HookSpec]) -> JSONObject:
@@ -83,7 +85,7 @@ def hooks_document(specs: Mapping[str, HookSpec]) -> JSONObject:
 
 
 def merge_hooks(text: str | None, path: Path, specs: Mapping[str, HookSpec]) -> str:
-    """Add our hook command under each event unless already present; user hooks untouched."""
+    """Add our hook command under each event, or refresh its timeout; user hooks untouched."""
     obj, layout = _load(text, path)
     hooks = _section(obj, "hooks", path)
     if hooks is None:
@@ -97,10 +99,14 @@ def merge_hooks(text: str | None, path: Path, specs: Mapping[str, HookSpec]) -> 
         if groups is None:
             groups = []
             hooks[event] = groups
-        if any(_has_command(group, spec.command) for group in groups):
-            continue
-        groups.append({"hooks": [hook_entry(spec)]})
-        changed = True
+        ours = _entries_for(groups, spec.command)
+        if not ours:
+            groups.append({"hooks": [hook_entry(spec)]})
+            changed = True
+        for entry in ours:
+            if entry.get("timeout") != spec.timeout_s:
+                entry["timeout"] = spec.timeout_s
+                changed = True
     if not changed and text is not None:
         return text
     return dump_object(obj, layout)

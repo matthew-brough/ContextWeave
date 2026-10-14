@@ -20,7 +20,7 @@ def test_install_writes_mcp_and_block(root: Path, home: Path) -> None:
 
 
 def test_no_hooks() -> None:
-    assert AgentsMdAdapter().hook_events() == {}
+    assert AgentsMdAdapter().hook_events(10) == {}
 
 
 def test_detect(root: Path) -> None:
